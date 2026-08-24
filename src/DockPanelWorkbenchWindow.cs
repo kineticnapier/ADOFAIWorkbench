@@ -116,15 +116,7 @@ namespace KineticNapier.ADOFAIWorkbench
                 Application.EnableVisualStyles();
                 Application.SetCompatibleTextRenderingDefault(false);
 
-                Type windowType = Assembly.GetExecutingAssembly().GetType(
-                    "KineticNapier.ADOFAIWorkbench.WorkbenchForm",
-                    true,
-                    false);
-                object instance = Activator.CreateInstance(windowType);
-                IWorkbenchWindow created = instance as IWorkbenchWindow;
-                if (created == null)
-                    throw new InvalidOperationException("WorkbenchForm did not implement IWorkbenchWindow.");
-
+                WorkbenchForm created = new WorkbenchForm();
                 Form form = created.Form;
                 IntPtr ignored = form.Handle;
 
