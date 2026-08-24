@@ -1,6 +1,7 @@
 using System.Collections.Generic;
-using ADOFAI.EditorToolkit.Game;
-using UnityEngine;
+using System.Windows;
+using System.Windows.Controls;
+using System.Windows.Media;
 
 namespace KineticNapier.ADOFAIWorkbench
 {
@@ -15,80 +16,41 @@ namespace KineticNapier.ADOFAIWorkbench
 
     internal sealed class WelcomePane : IDockablePane
     {
-        private GameObject root;
-
         public string Id { get { return "workbench.welcome"; } }
         public string Title { get { return "Welcome"; } }
         public bool CanClose { get { return false; } }
 
-        public void Mount(RectTransform parent)
+        public FrameworkElement CreateView()
         {
-            Unmount();
-            root = new GameObject("WelcomePane", typeof(RectTransform));
-            RectTransform rect = (RectTransform)root.transform;
-            rect.SetParent(parent, false);
-            rect.anchorMin = Vector2.zero;
-            rect.anchorMax = Vector2.one;
-            rect.offsetMin = Vector2.zero;
-            rect.offsetMax = Vector2.zero;
-
-            GameObject title = ADOFAIEditorUiHost.CloneStockObject("findFloorPanelTitle", rect, "Title");
-            RectTransform titleRect = title.transform as RectTransform;
-            if (titleRect != null)
+            Grid root = new Grid { Background = new SolidColorBrush(Color.FromRgb(19, 21, 26)) };
+            StackPanel panel = new StackPanel
             {
-                titleRect.anchorMin = new Vector2(0.5f, 0.5f);
-                titleRect.anchorMax = new Vector2(0.5f, 0.5f);
-                titleRect.pivot = new Vector2(0.5f, 0.5f);
-                titleRect.anchoredPosition = new Vector2(0f, 20f);
-                titleRect.sizeDelta = new Vector2(700f, 50f);
-            }
-            SetText(title, "ADOFAI Workbench");
-            SetFontSize(title, 28f);
-
-            GameObject subtitle = ADOFAIEditorUiHost.CloneStockObject("findFloorPanelTitle", rect, "Subtitle");
-            RectTransform subRect = subtitle.transform as RectTransform;
-            if (subRect != null)
+                HorizontalAlignment = HorizontalAlignment.Center,
+                VerticalAlignment = VerticalAlignment.Center,
+                MaxWidth = 760
+            };
+            panel.Children.Add(new TextBlock
             {
-                subRect.anchorMin = new Vector2(0.5f, 0.5f);
-                subRect.anchorMax = new Vector2(0.5f, 0.5f);
-                subRect.pivot = new Vector2(0.5f, 0.5f);
-                subRect.anchoredPosition = new Vector2(0f, -24f);
-                subRect.sizeDelta = new Vector2(850f, 40f);
-            }
-            SetText(subtitle, "Dockable workspace shell active. Consumer mods can register panes through Workbench.RegisterPaneProvider(...).");
-            SetFontSize(subtitle, 15f);
+                Text = "ADOFAI Workbench",
+                FontSize = 30,
+                FontWeight = FontWeights.SemiBold,
+                Foreground = Brushes.White,
+                HorizontalAlignment = HorizontalAlignment.Center,
+                Margin = new Thickness(0, 0, 0, 14)
+            });
+            panel.Children.Add(new TextBlock
+            {
+                Text = "Standalone dockable tool window. ADOFAI itself stays untouched; consumer mods can add panes and queue commands back to Unity's main thread.",
+                FontSize = 15,
+                Foreground = new SolidColorBrush(Color.FromRgb(200, 204, 214)),
+                TextWrapping = TextWrapping.Wrap,
+                TextAlignment = TextAlignment.Center
+            });
+            root.Children.Add(panel);
+            return root;
         }
 
-        public void Unmount()
-        {
-            if (root != null) Object.Destroy(root);
-            root = null;
-        }
-
-        private static void SetText(GameObject go, string text)
-        {
-            Component[] components = go.GetComponentsInChildren<Component>(true);
-            for (int i = 0; i < components.Length; i++)
-            {
-                Component component = components[i];
-                if (component == null) continue;
-                System.Reflection.PropertyInfo property = component.GetType().GetProperty("text");
-                if (property != null && property.CanWrite && property.PropertyType == typeof(string))
-                    property.SetValue(component, text, null);
-            }
-        }
-
-        private static void SetFontSize(GameObject go, float size)
-        {
-            Component[] components = go.GetComponentsInChildren<Component>(true);
-            for (int i = 0; i < components.Length; i++)
-            {
-                Component component = components[i];
-                if (component == null) continue;
-                System.Reflection.PropertyInfo property = component.GetType().GetProperty("fontSize");
-                if (property != null && property.CanWrite && property.PropertyType == typeof(float))
-                    property.SetValue(component, size, null);
-            }
-        }
+        public void OnOpened() { }
+        public void OnClosed() { }
     }
 }
