@@ -70,6 +70,14 @@ namespace KineticNapier.ADOFAIWorkbench
         {
             if (defaultSeeded) return;
             defaultSeeded = true;
+
+            IDockablePane chart = Workbench.FindPane("adofai.chart");
+            if (chart != null)
+            {
+                workspace.OpenInFocused(chart.Id);
+                return;
+            }
+
             foreach (IDockablePane pane in Workbench.Panes)
             {
                 if (pane == null) continue;
@@ -97,8 +105,6 @@ namespace KineticNapier.ADOFAIWorkbench
 
             frame = CreateRect(host, "WorkbenchFrame");
             Stretch(frame, Vector2.zero, Vector2.zero);
-            RectTransform background = CreatePanel(frame, "Background", new Color(0.075f, 0.08f, 0.10f, 0.98f), false, null);
-            Stretch(background, Vector2.zero, Vector2.zero);
 
             RectTransform toolbar = CreatePanel(frame, "Toolbar", new Color(0.12f, 0.13f, 0.16f, 0.99f), false, null);
             AnchorTop(toolbar, ToolbarHeight);
@@ -227,8 +233,16 @@ namespace KineticNapier.ADOFAIWorkbench
             IDockablePane activePane = Workbench.FindPane(group.ActivePaneId);
             if (activePane == null)
             {
+                RectTransform emptyBackground = CreatePanel(content, "ContentBackground", new Color(0.075f, 0.08f, 0.10f, 0.98f), false, null);
+                Stretch(emptyBackground, Vector2.zero, Vector2.zero);
                 CreateLabel(content, "Empty", "No pane. Use the + buttons in the toolbar.", 12f, 12f, 460f, 28f, 16f);
                 return;
+            }
+
+            if (!string.Equals(activePane.Id, "adofai.chart", StringComparison.Ordinal))
+            {
+                RectTransform contentBackground = CreatePanel(content, "ContentBackground", new Color(0.075f, 0.08f, 0.10f, 0.98f), false, null);
+                Stretch(contentBackground, Vector2.zero, Vector2.zero);
             }
 
             foreach (KeyValuePair<DockGroup, IDockablePane> pair in mounted)
