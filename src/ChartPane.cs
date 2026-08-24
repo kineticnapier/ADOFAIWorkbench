@@ -23,9 +23,9 @@ namespace KineticNapier.ADOFAIWorkbench
         private const float MinimumSideWidth = 100f;
 
         private GameObject root;
-        private readonly MountedStockRegion settings = new MountedStockRegion("settingsPanel");
-        private readonly MountedStockRegion events = new MountedStockRegion("levelEventsPanel");
-        private readonly MountedStockRegion bottom = new MountedStockRegion("bottomPanel");
+        private readonly StockOverlayRegion settings = new StockOverlayRegion("settingsPanel");
+        private readonly StockOverlayRegion events = new StockOverlayRegion("levelEventsPanel");
+        private readonly StockOverlayRegion bottom = new StockOverlayRegion("bottomPanel");
 
         public string Id { get { return "adofai.chart"; } }
         public string Title { get { return "ADOFAI Chart"; } }
@@ -36,32 +36,15 @@ namespace KineticNapier.ADOFAIWorkbench
             Unmount();
             if (parent == null) return;
 
-            root = new GameObject("ADOFAIChartPane", typeof(RectTransform), typeof(ChartLayoutFollower));
+            root = new GameObject("ADOFAIChartPane", typeof(RectTransform), typeof(ChartCompositeFollower));
             RectTransform rootRect = (RectTransform)root.transform;
             rootRect.SetParent(parent, false);
             Stretch(rootRect, Vector2.zero, Vector2.zero);
 
-            RectTransform leftHost = CreateHost(rootRect, "SettingsHost");
-            RectTransform rightHost = CreateHost(rootRect, "EventsHost");
-            RectTransform bottomHost = CreateHost(rootRect, "BottomHost");
-
-            GameObject viewportObject = new GameObject("ChartViewport", typeof(RectTransform), typeof(ChartViewportFollower));
-            RectTransform viewport = (RectTransform)viewportObject.transform;
-            viewport.SetParent(rootRect, false);
-            Stretch(viewport, new Vector2(NativeSideWidth, NativeBottomHeight), new Vector2(-NativeSideWidth, 0f));
-            viewportObject.GetComponent<ChartViewportFollower>().Target = viewport;
-
-            ChartLayoutFollower layout = root.GetComponent<ChartLayoutFollower>();
-            layout.Root = rootRect;
-            layout.LeftHost = leftHost;
-            layout.RightHost = rightHost;
-            layout.BottomHost = bottomHost;
-            layout.Viewport = viewport;
-            layout.NativeSideWidth = NativeSideWidth;
-            layout.NativeBottomHeight = NativeBottomHeight;
-            layout.MinimumSideWidth = MinimumSideWidth;
-            layout.MinimumWorldWidth = MinimumWorldWidth;
-            layout.ApplyNow(true);
+            RectTransform leftHost = CreateHost(rootRect, "SettingsRegion");
+            RectTransform rightHost = CreateHost(rootRect, "EventsRegion");
+            RectTransform bottomHost = CreateHost(rootRect, "BottomRegion");
+            RectTransform viewport = CreateHost(rootRect, "ChartViewport");
 
             scnEditor editor = ADOBase.editor;
             if (editor != null)
@@ -70,6 +53,21 @@ namespace KineticNapier.ADOFAIWorkbench
                 events.Mount(rightHost, editor);
                 bottom.Mount(bottomHost, editor);
             }
+
+            ChartCompositeFollower follower = root.GetComponent<ChartCompositeFollower>();
+            follower.Root = rootRect;
+            follower.LeftHost = leftHost;
+            follower.RightHost = rightHost;
+            follower.BottomHost = bottomHost;
+            follower.Viewport = viewport;
+            follower.Settings = settings;
+            follower.Events = events;
+            follower.Bottom = bottom;
+            follower.NativeSideWidth = NativeSideWidth;
+            follower.NativeBottomHeight = NativeBottomHeight;
+            follower.MinimumSideWidth = MinimumSideWidth;
+            follower.MinimumWorldWidth = MinimumWorldWidth;
+            follower.ApplyNow(true);
         }
 
         public void Unmount()
@@ -84,7 +82,7 @@ namespace KineticNapier.ADOFAIWorkbench
 
         private static RectTransform CreateHost(Transform parent, string name)
         {
-            GameObject go = new GameObject(name, typeof(RectTransform), typeof(NativeStockFitter));
+            GameObject go = new GameObject(name, typeof(RectTransform));
             RectTransform rect = (RectTransform)go.transform;
             rect.SetParent(parent, false);
             return rect;
@@ -101,95 +99,175 @@ namespace KineticNapier.ADOFAIWorkbench
             rect.offsetMax = offsetMax;
             rect.localScale = Vector3.one;
         }
+    }
 
-        private sealed class MountedStockRegion
+    // Stock ADOFAI panels are deliberately NOT parented under the Workbench content.
+    // They stay directly under the editor canvas and are positioned over reserved
+    // rectangles in ChartPane. This preserves their native Canvas/layout behaviour and,
+    // crucially, keeps Workbench tabs/toolbars later in the Canvas draw order.
+    internal sealed class StockOverlayRegion
+    {
+        private readonly string memberName;
+        private readonly Vector3[] hostCorners = new Vector3[4];
+
+        private RectTransform host;
+        private RectTransform targetRect;
+        private GameObject target;
+        private Transform originalParent;
+        private int originalSiblingIndex;
+        private bool originalActive;
+        private StockEditorPane.RectState originalRect;
+        private Vector2 nativeSize;
+        private RectTransform canvasRoot;
+
+        private float lastWidth = -1f;
+        private float lastHeight = -1f;
+        private Vector3 lastCenter = new Vector3(float.NaN, float.NaN, float.NaN);
+
+        internal StockOverlayRegion(string memberName)
         {
-            private readonly string memberName;
-            private GameObject target;
-            private Transform originalParent;
-            private int originalSiblingIndex;
-            private bool originalActive;
-            private StockEditorPane.RectState originalRect;
+            this.memberName = memberName;
+        }
 
-            internal MountedStockRegion(string memberName)
+        internal void Mount(RectTransform targetHost, scnEditor editor)
+        {
+            Restore();
+            if (targetHost == null || editor == null) return;
+
+            host = targetHost;
+            target = StockEditorPane.Resolve(editor, memberName);
+            if (target == null) return;
+
+            targetRect = target.transform as RectTransform;
+            if (targetRect == null)
             {
-                this.memberName = memberName;
-            }
-
-            internal void Mount(RectTransform host, scnEditor editor)
-            {
-                Restore();
-                if (host == null || editor == null) return;
-
-                target = StockEditorPane.Resolve(editor, memberName);
-                if (target == null) return;
-
-                RectTransform rect = target.transform as RectTransform;
-                if (rect == null)
-                {
-                    target = null;
-                    return;
-                }
-
-                Vector2 nativeSize = new Vector2(
-                    Mathf.Max(1f, rect.rect.width),
-                    Mathf.Max(1f, rect.rect.height));
-
-                originalParent = rect.parent;
-                originalSiblingIndex = rect.GetSiblingIndex();
-                originalRect = StockEditorPane.RectState.Capture(rect);
-
-                StockEditorOverride.Claim(target);
-                originalActive = target.activeSelf;
-
-                rect.SetParent(host, false);
-                rect.anchorMin = new Vector2(0.5f, 0.5f);
-                rect.anchorMax = new Vector2(0.5f, 0.5f);
-                rect.pivot = new Vector2(0.5f, 0.5f);
-                rect.anchoredPosition = Vector2.zero;
-                rect.sizeDelta = nativeSize;
-                rect.localScale = Vector3.one;
-                target.SetActive(true);
-
-                NativeStockFitter fitter = host.GetComponent<NativeStockFitter>();
-                if (fitter != null)
-                {
-                    fitter.Target = rect;
-                    fitter.NativeSize = nativeSize;
-                    fitter.ApplyNow(true);
-                }
-            }
-
-            internal void Restore()
-            {
-                if (target == null) return;
-
-                RectTransform rect = target.transform as RectTransform;
-                if (rect != null && originalParent != null)
-                {
-                    rect.SetParent(originalParent, false);
-                    rect.SetSiblingIndex(Mathf.Clamp(
-                        originalSiblingIndex,
-                        0,
-                        Math.Max(0, originalParent.childCount - 1)));
-                    originalRect.Apply(rect);
-                }
-
-                target.SetActive(originalActive);
-                StockEditorOverride.Release(target);
                 target = null;
-                originalParent = null;
+                return;
             }
+
+            canvasRoot = ADOFAIEditorUiHost.Root;
+            if (canvasRoot == null)
+            {
+                target = null;
+                targetRect = null;
+                return;
+            }
+
+            nativeSize = new Vector2(
+                Mathf.Max(1f, targetRect.rect.width),
+                Mathf.Max(1f, targetRect.rect.height));
+
+            originalParent = targetRect.parent;
+            originalSiblingIndex = targetRect.GetSiblingIndex();
+            originalRect = StockEditorPane.RectState.Capture(targetRect);
+
+            // Apply() runs before the Workbench shell and may already have hidden this
+            // subtree. Claim restores the saved native active states first.
+            StockEditorOverride.Claim(target);
+            originalActive = target.activeSelf;
+
+            // Keep the stock UI on the editor Canvas, but always immediately below the
+            // Workbench overlay root. This makes native controls visible while chrome,
+            // tabs and pane borders remain on top.
+            targetRect.SetParent(canvasRoot, false);
+            int workbenchIndex = FindWorkbenchSiblingIndex(canvasRoot);
+            if (workbenchIndex >= 0)
+                targetRect.SetSiblingIndex(Mathf.Clamp(workbenchIndex, 0, Math.Max(0, canvasRoot.childCount - 1)));
+            else
+                targetRect.SetAsFirstSibling();
+
+            targetRect.anchorMin = new Vector2(0.5f, 0.5f);
+            targetRect.anchorMax = new Vector2(0.5f, 0.5f);
+            targetRect.pivot = new Vector2(0.5f, 0.5f);
+            targetRect.sizeDelta = nativeSize;
+            targetRect.localScale = Vector3.one;
+            target.SetActive(true);
+
+            Apply(true);
+        }
+
+        internal void Apply(bool force)
+        {
+            if (host == null || targetRect == null || canvasRoot == null) return;
+
+            host.GetWorldCorners(hostCorners);
+            Vector3 localBottomLeft = canvasRoot.InverseTransformPoint(hostCorners[0]);
+            Vector3 localTopRight = canvasRoot.InverseTransformPoint(hostCorners[2]);
+            float width = Mathf.Abs(localTopRight.x - localBottomLeft.x);
+            float height = Mathf.Abs(localTopRight.y - localBottomLeft.y);
+            Vector3 center = (hostCorners[0] + hostCorners[2]) * 0.5f;
+
+            if (!force
+                && Mathf.Abs(width - lastWidth) < 0.01f
+                && Mathf.Abs(height - lastHeight) < 0.01f
+                && (center - lastCenter).sqrMagnitude < 0.0001f)
+                return;
+
+            lastWidth = width;
+            lastHeight = height;
+            lastCenter = center;
+
+            float scale = Mathf.Min(width / nativeSize.x, height / nativeSize.y);
+            scale = Mathf.Clamp(scale, 0.05f, 1f);
+
+            targetRect.position = center;
+            targetRect.anchorMin = new Vector2(0.5f, 0.5f);
+            targetRect.anchorMax = new Vector2(0.5f, 0.5f);
+            targetRect.pivot = new Vector2(0.5f, 0.5f);
+            targetRect.sizeDelta = nativeSize;
+            targetRect.localScale = new Vector3(scale, scale, 1f);
+        }
+
+        internal void Restore()
+        {
+            if (target == null) return;
+
+            if (targetRect != null && originalParent != null)
+            {
+                targetRect.SetParent(originalParent, false);
+                targetRect.SetSiblingIndex(Mathf.Clamp(
+                    originalSiblingIndex,
+                    0,
+                    Math.Max(0, originalParent.childCount - 1)));
+                originalRect.Apply(targetRect);
+            }
+
+            target.SetActive(originalActive);
+            StockEditorOverride.Release(target);
+
+            host = null;
+            targetRect = null;
+            target = null;
+            originalParent = null;
+            canvasRoot = null;
+            lastWidth = -1f;
+            lastHeight = -1f;
+            lastCenter = new Vector3(float.NaN, float.NaN, float.NaN);
+        }
+
+        private static int FindWorkbenchSiblingIndex(RectTransform root)
+        {
+            if (root == null) return -1;
+            for (int i = 0; i < root.childCount; i++)
+            {
+                Transform child = root.GetChild(i);
+                if (child != null && string.Equals(child.name, "ADOFAI Workbench Root", StringComparison.Ordinal))
+                    return i;
+            }
+            return -1;
         }
     }
 
-    internal sealed class ChartLayoutFollower : MonoBehaviour
+    internal sealed class ChartCompositeFollower : MonoBehaviour
     {
         internal RectTransform Root;
         internal RectTransform LeftHost;
         internal RectTransform RightHost;
         internal RectTransform BottomHost;
         internal RectTransform Viewport;
+        internal StockOverlayRegion Settings;
+        internal StockOverlayRegion Events;
+        internal StockOverlayRegion Bottom;
         internal float NativeSideWidth;
         internal float NativeBottomHeight;
         internal float MinimumSideWidth;
@@ -210,103 +288,67 @@ namespace KineticNapier.ADOFAIWorkbench
 
             float width = Mathf.Max(1f, Root.rect.width);
             float height = Mathf.Max(1f, Root.rect.height);
-            if (!force && Mathf.Abs(width - lastWidth) < 0.01f && Mathf.Abs(height - lastHeight) < 0.01f)
-                return;
+            bool layoutChanged = force
+                || Mathf.Abs(width - lastWidth) >= 0.01f
+                || Mathf.Abs(height - lastHeight) >= 0.01f;
 
-            lastWidth = width;
-            lastHeight = height;
+            if (layoutChanged)
+            {
+                lastWidth = width;
+                lastHeight = height;
 
-            float bottomHeight = Mathf.Min(NativeBottomHeight, Mathf.Max(52f, height * 0.22f));
-            float sideWidth = Mathf.Min(
-                NativeSideWidth,
-                Mathf.Max(MinimumSideWidth, (width - MinimumWorldWidth) * 0.5f));
+                float bottomHeight = Mathf.Min(
+                    NativeBottomHeight,
+                    Mathf.Max(52f, height * 0.22f));
 
-            LeftHost.anchorMin = new Vector2(0f, 0f);
-            LeftHost.anchorMax = new Vector2(0f, 1f);
-            LeftHost.pivot = new Vector2(0f, 0.5f);
-            LeftHost.anchoredPosition = new Vector2(0f, bottomHeight * 0.5f);
-            LeftHost.sizeDelta = new Vector2(sideWidth, -bottomHeight);
+                float availableForSides = Mathf.Max(0f, width - MinimumWorldWidth);
+                float sideWidth = Mathf.Min(NativeSideWidth, availableForSides * 0.5f);
+                if (availableForSides >= MinimumSideWidth * 2f)
+                    sideWidth = Mathf.Max(MinimumSideWidth, sideWidth);
 
-            RightHost.anchorMin = new Vector2(1f, 0f);
-            RightHost.anchorMax = new Vector2(1f, 1f);
-            RightHost.pivot = new Vector2(1f, 0.5f);
-            RightHost.anchoredPosition = new Vector2(0f, bottomHeight * 0.5f);
-            RightHost.sizeDelta = new Vector2(sideWidth, -bottomHeight);
+                LeftHost.anchorMin = new Vector2(0f, 0f);
+                LeftHost.anchorMax = new Vector2(0f, 1f);
+                LeftHost.pivot = new Vector2(0f, 0.5f);
+                LeftHost.anchoredPosition = new Vector2(0f, bottomHeight * 0.5f);
+                LeftHost.sizeDelta = new Vector2(sideWidth, -bottomHeight);
 
-            BottomHost.anchorMin = new Vector2(0f, 0f);
-            BottomHost.anchorMax = new Vector2(1f, 0f);
-            BottomHost.pivot = new Vector2(0.5f, 0f);
-            BottomHost.anchoredPosition = Vector2.zero;
-            BottomHost.sizeDelta = new Vector2(0f, bottomHeight);
+                RightHost.anchorMin = new Vector2(1f, 0f);
+                RightHost.anchorMax = new Vector2(1f, 1f);
+                RightHost.pivot = new Vector2(1f, 0.5f);
+                RightHost.anchoredPosition = new Vector2(0f, bottomHeight * 0.5f);
+                RightHost.sizeDelta = new Vector2(sideWidth, -bottomHeight);
 
-            Viewport.anchorMin = Vector2.zero;
-            Viewport.anchorMax = Vector2.one;
-            Viewport.pivot = new Vector2(0.5f, 0.5f);
-            Viewport.anchoredPosition = Vector2.zero;
-            Viewport.sizeDelta = Vector2.zero;
-            Viewport.offsetMin = new Vector2(sideWidth, bottomHeight);
-            Viewport.offsetMax = new Vector2(-sideWidth, 0f);
+                BottomHost.anchorMin = new Vector2(0f, 0f);
+                BottomHost.anchorMax = new Vector2(1f, 0f);
+                BottomHost.pivot = new Vector2(0.5f, 0f);
+                BottomHost.anchoredPosition = Vector2.zero;
+                BottomHost.sizeDelta = new Vector2(0f, bottomHeight);
+
+                Viewport.anchorMin = Vector2.zero;
+                Viewport.anchorMax = Vector2.one;
+                Viewport.pivot = new Vector2(0.5f, 0.5f);
+                Viewport.anchoredPosition = Vector2.zero;
+                Viewport.sizeDelta = Vector2.zero;
+                Viewport.offsetMin = new Vector2(sideWidth, bottomHeight);
+                Viewport.offsetMax = new Vector2(-sideWidth, 0f);
+            }
+
+            // These calls are cheap: each region only writes when its world rect changed.
+            if (Settings != null) Settings.Apply(force || layoutChanged);
+            if (Events != null) Events.Apply(force || layoutChanged);
+            if (Bottom != null) Bottom.Apply(force || layoutChanged);
+            ChartCameraViewport.Apply(Viewport);
         }
-    }
 
-    internal sealed class NativeStockFitter : MonoBehaviour
-    {
-        internal RectTransform Target;
-        internal Vector2 NativeSize;
-
-        private float lastWidth = -1f;
-        private float lastHeight = -1f;
-        private float lastNativeWidth = -1f;
-        private float lastNativeHeight = -1f;
-
-        private void LateUpdate()
+        private void OnDisable()
         {
-            ApplyNow(false);
+            ChartCameraViewport.Restore();
         }
 
-        internal void ApplyNow(bool force)
+        private void OnDestroy()
         {
-            RectTransform host = transform as RectTransform;
-            if (host == null || Target == null || NativeSize.x <= 0f || NativeSize.y <= 0f) return;
-
-            float width = host.rect.width;
-            float height = host.rect.height;
-            if (!force
-                && Mathf.Abs(width - lastWidth) < 0.01f
-                && Mathf.Abs(height - lastHeight) < 0.01f
-                && Mathf.Abs(NativeSize.x - lastNativeWidth) < 0.01f
-                && Mathf.Abs(NativeSize.y - lastNativeHeight) < 0.01f)
-                return;
-
-            lastWidth = width;
-            lastHeight = height;
-            lastNativeWidth = NativeSize.x;
-            lastNativeHeight = NativeSize.y;
-
-            float scale = Mathf.Min(width / NativeSize.x, height / NativeSize.y);
-            scale = Mathf.Clamp(scale, 0.05f, 1f);
-
-            Target.anchorMin = new Vector2(0.5f, 0.5f);
-            Target.anchorMax = new Vector2(0.5f, 0.5f);
-            Target.pivot = new Vector2(0.5f, 0.5f);
-            Target.anchoredPosition = Vector2.zero;
-            Target.sizeDelta = NativeSize;
-            Target.localScale = new Vector3(scale, scale, 1f);
+            ChartCameraViewport.Restore();
         }
-    }
-
-    internal sealed class ChartViewportFollower : MonoBehaviour
-    {
-        internal RectTransform Target;
-
-        private void LateUpdate()
-        {
-            if (Target == null || ADOBase.editor == null) return;
-            ChartCameraViewport.Apply(Target);
-        }
-
-        private void OnDisable() { ChartCameraViewport.Restore(); }
-        private void OnDestroy() { ChartCameraViewport.Restore(); }
     }
 
     internal static class ChartCameraViewport
@@ -376,18 +418,16 @@ namespace KineticNapier.ADOFAIWorkbench
                 Transform mainTransform = camParent.transform.Find("Camera");
                 if (mainTransform != null)
                 {
-                    Camera main = mainTransform.GetComponent<Camera>();
-                    AddCamera(main);
+                    AddCamera(mainTransform.GetComponent<Camera>());
 
                     Transform overlayTransform = mainTransform.Find("OverlayCam");
-                    if (overlayTransform != null) AddCamera(overlayTransform.GetComponent<Camera>());
+                    if (overlayTransform != null)
+                        AddCamera(overlayTransform.GetComponent<Camera>());
                 }
             }
 
             if (chartCameras.Count > 0) return;
 
-            // Fallback only when the known hierarchy could not be found. This used to
-            // run every frame and was the largest Workbench performance regression.
             Camera[] cameras = Resources.FindObjectsOfTypeAll<Camera>();
             for (int i = 0; i < cameras.Length; i++)
             {
