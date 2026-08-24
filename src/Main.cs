@@ -7,7 +7,7 @@ namespace KineticNapier.ADOFAIWorkbench
 {
     public static class Main
     {
-        internal const string Version = "0.6.4";
+        internal const string Version = "0.7.0";
         private static bool enabled;
         private static UnityModManager.ModEntry modEntry;
 
@@ -24,7 +24,7 @@ namespace KineticNapier.ADOFAIWorkbench
             try
             {
                 Workbench.RegisterPaneProvider(new WelcomePaneProvider());
-                entry.Logger.Log("ADOFAI Workbench v" + Version + " loaded (non-blocking external .NET Framework DockPanel host). ModDir=" + ModDirectory);
+                entry.Logger.Log("ADOFAI Workbench v" + Version + " loaded (non-blocking loopback TCP + external .NET Framework DockPanel host). ModDir=" + ModDirectory);
                 return true;
             }
             catch (Exception ex)
@@ -55,8 +55,8 @@ namespace KineticNapier.ADOFAIWorkbench
             enabled = false;
             try
             {
-                // This only signals the IPC worker. No pipe or process operation is
-                // performed on Unity's shutdown thread.
+                // Non-blocking: this only flips local flags and wakes the IPC worker.
+                // The Host also watches the ADOFAI PID, so it cannot survive the game.
                 ExternalWorkbenchHost.Shutdown();
                 return true;
             }
