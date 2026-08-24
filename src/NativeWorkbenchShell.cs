@@ -19,8 +19,8 @@ namespace KineticNapier.ADOFAIWorkbench
         private static RectTransform host;
         private static RectTransform frame;
         private static string signature;
-        private static bool visible = true;
         private static string status = "Workbench ready.";
+        private static bool defaultSeeded;
 
         static NativeWorkbenchShell()
         {
@@ -37,10 +37,10 @@ namespace KineticNapier.ADOFAIWorkbench
                 host = null;
                 frame = null;
                 signature = null;
+                defaultSeeded = false;
             }
 
             EnsureHost();
-            visible = true;
             host.gameObject.SetActive(true);
             EnsureDefaultPane();
 
@@ -54,7 +54,6 @@ namespace KineticNapier.ADOFAIWorkbench
 
         internal static void SetVisible(bool value)
         {
-            visible = value;
             if (host != null) host.gameObject.SetActive(value);
             if (!value) UnmountAll();
         }
@@ -69,7 +68,8 @@ namespace KineticNapier.ADOFAIWorkbench
 
         private static void EnsureDefaultPane()
         {
-            if (workspace.FocusedGroup.ActivePaneId != null) return;
+            if (defaultSeeded) return;
+            defaultSeeded = true;
             foreach (IDockablePane pane in Workbench.Panes)
             {
                 if (pane == null) continue;
@@ -82,10 +82,7 @@ namespace KineticNapier.ADOFAIWorkbench
         {
             if (host != null) return;
             host = ADOFAIEditorUiHost.GetOrCreateOverlayRoot(HostName);
-            host.anchorMin = Vector2.zero;
-            host.anchorMax = Vector2.one;
-            host.offsetMin = Vector2.zero;
-            host.offsetMax = Vector2.zero;
+            Stretch(host, Vector2.zero, Vector2.zero);
         }
 
         private static void Rebuild()
@@ -100,7 +97,6 @@ namespace KineticNapier.ADOFAIWorkbench
 
             frame = CreateRect(host, "WorkbenchFrame");
             Stretch(frame, Vector2.zero, Vector2.zero);
-
             RectTransform background = CreatePanel(frame, "Background", new Color(0.075f, 0.08f, 0.10f, 0.98f), false, null);
             Stretch(background, Vector2.zero, Vector2.zero);
 
@@ -108,19 +104,31 @@ namespace KineticNapier.ADOFAIWorkbench
             AnchorTop(toolbar, ToolbarHeight);
             CreateButton(toolbar, "SplitRight", "Split Right", 8f, 4f, 104f, 30f, delegate
             {
-                DockGroup created = workspace.SplitFocused(DockSplitDirection.Columns);
-                CopyActivePaneTo(created);
+                workspace.SplitFocused(DockSplitDirection.Columns);
                 status = "Split right.";
                 Invalidate();
             }, false);
             CreateButton(toolbar, "SplitDown", "Split Down", 118f, 4f, 100f, 30f, delegate
             {
-                DockGroup created = workspace.SplitFocused(DockSplitDirection.Rows);
-                CopyActivePaneTo(created);
+                workspace.SplitFocused(DockSplitDirection.Rows);
                 status = "Split down.";
                 Invalidate();
             }, false);
-            CreateLabel(toolbar, "Title", "ADOFAI Workbench", 238f, 7f, 260f, 26f, 17f);
+            CreateLabel(toolbar, "Title", "ADOFAI Workbench", 234f, 7f, 190f, 26f, 17f);
+
+            float launchX = 430f;
+            foreach (IDockablePane pane in Workbench.Panes)
+            {
+                if (pane == null) continue;
+                float width = Mathf.Clamp(34f + pane.Title.Length * 6f, 70f, 142f);
+                if (launchX + width > toolbar.rect.width - 8f) break;
+                IDockablePane captured = pane;
+                CreateButton(toolbar, "Open_" + pane.Id, "+ " + pane.Title, launchX, 4f, width, 30f, delegate
+                {
+                    OpenPane(captured);
+                }, false);
+                launchX += width + 4f;
+            }
 
             RectTransform body = CreateRect(frame, "DockRoot");
             Stretch(body, new Vector2(0f, StatusHeight), new Vector2(0f, -ToolbarHeight));
@@ -128,19 +136,7 @@ namespace KineticNapier.ADOFAIWorkbench
 
             RectTransform statusBar = CreatePanel(frame, "StatusBar", new Color(0.10f, 0.11f, 0.14f, 0.99f), false, null);
             AnchorBottom(statusBar, StatusHeight);
-            CreateLabel(statusBar, "Status", status, 8f, 1f, 900f, 20f, 13f);
-        }
-
-        private static void CopyActivePaneTo(DockGroup group)
-        {
-            if (group == null) return;
-            string active = null;
-            foreach (DockGroup candidate in workspace.Groups)
-            {
-                if (ReferenceEquals(candidate, group)) continue;
-                if (candidate.ActivePaneId != null) active = candidate.ActivePaneId;
-            }
-            if (active != null) group.Open(active);
+            CreateLabel(statusBar, "Status", status, 8f, 1f, 1000f, 20f, 13f);
         }
 
         private static void BuildNode(RectTransform parent, DockNode node)
@@ -155,7 +151,6 @@ namespace KineticNapier.ADOFAIWorkbench
             DockSplit split = node as DockSplit;
             if (split == null) return;
             float ratio = Mathf.Clamp(split.Ratio, 0.15f, 0.85f);
-
             RectTransform first = CreateRect(parent, "SplitFirst");
             RectTransform second = CreateRect(parent, "SplitSecond");
             if (split.Direction == DockSplitDirection.Columns)
@@ -189,7 +184,6 @@ namespace KineticNapier.ADOFAIWorkbench
             bool focused = ReferenceEquals(workspace.FocusedGroup, group);
             RectTransform tabs = CreatePanel(parent, "Tabs", focused ? new Color(0.18f, 0.21f, 0.27f, 0.99f) : new Color(0.12f, 0.13f, 0.16f, 0.99f), false, null);
             AnchorTop(tabs, TabHeight);
-
             CreateButton(tabs, "Focus", focused ? ">" : "", 4f, 3f, 30f, 28f, delegate
             {
                 workspace.Focus(group);
@@ -206,35 +200,55 @@ namespace KineticNapier.ADOFAIWorkbench
                 if (pane == null) continue;
                 bool active = string.Equals(group.ActivePaneId, id, StringComparison.Ordinal);
                 string capturedId = id;
-                float width = Mathf.Clamp(50f + pane.Title.Length * 7f, 86f, 180f);
-                CreateButton(tabs, "Tab_" + i, pane.Title, x, 3f, width, 28f, delegate
+                IDockablePane capturedPane = pane;
+                float closeWidth = pane.CanClose ? 25f : 0f;
+                float titleWidth = Mathf.Clamp(46f + pane.Title.Length * 7f, 78f, 170f);
+                CreateButton(tabs, "Tab_" + i, pane.Title, x, 3f, titleWidth, 28f, delegate
                 {
                     workspace.Focus(group);
                     group.Open(capturedId);
-                    status = "Focused " + pane.Title + ".";
+                    status = "Focused " + capturedPane.Title + ".";
                     Invalidate();
                 }, active && focused);
-                x += width + 3f;
+                if (pane.CanClose)
+                {
+                    CreateButton(tabs, "Close_" + i, "×", x + titleWidth, 3f, closeWidth, 28f, delegate
+                    {
+                        group.Close(capturedId);
+                        status = "Closed " + capturedPane.Title + ".";
+                        Invalidate();
+                    }, false);
+                }
+                x += titleWidth + closeWidth + 3f;
             }
 
             RectTransform content = CreateRect(parent, "Content");
             Stretch(content, Vector2.zero, new Vector2(0f, -TabHeight));
             IDockablePane activePane = Workbench.FindPane(group.ActivePaneId);
-            if (activePane != null)
+            if (activePane == null)
             {
-                activePane.Mount(content);
-                mounted[group] = activePane;
+                CreateLabel(content, "Empty", "No pane. Use the + buttons in the toolbar.", 12f, 12f, 460f, 28f, 16f);
+                return;
             }
-            else
+
+            foreach (KeyValuePair<DockGroup, IDockablePane> pair in mounted)
             {
-                CreateLabel(content, "Empty", "No pane", 12f, 12f, 240f, 28f, 16f);
+                if (!ReferenceEquals(pair.Key, group) && ReferenceEquals(pair.Value, activePane))
+                {
+                    CreateLabel(content, "AlreadyOpen", "This pane is already open in another group.", 12f, 12f, 500f, 28f, 16f);
+                    return;
+                }
             }
+
+            activePane.Mount(content);
+            mounted[group] = activePane;
         }
 
         private static void UnmountAll()
         {
+            var unique = new HashSet<IDockablePane>();
             foreach (KeyValuePair<DockGroup, IDockablePane> pair in mounted)
-                if (pair.Value != null) pair.Value.Unmount();
+                if (pair.Value != null && unique.Add(pair.Value)) pair.Value.Unmount();
             mounted.Clear();
         }
 
@@ -253,10 +267,7 @@ namespace KineticNapier.ADOFAIWorkbench
             return s.ToString();
         }
 
-        private static void Invalidate()
-        {
-            signature = null;
-        }
+        private static void Invalidate() { signature = null; }
 
         private static RectTransform CreateRect(Transform parent, string name)
         {
@@ -387,8 +398,12 @@ namespace KineticNapier.ADOFAIWorkbench
         {
             rect.anchorMin = Vector2.zero;
             rect.anchorMax = Vector2.one;
+            rect.pivot = new Vector2(0.5f, 0.5f);
+            rect.anchoredPosition = Vector2.zero;
+            rect.sizeDelta = Vector2.zero;
             rect.offsetMin = offsetMin;
             rect.offsetMax = offsetMax;
+            rect.localScale = Vector3.one;
         }
 
         private static void AnchorTop(RectTransform rect, float height)
