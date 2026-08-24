@@ -2,7 +2,7 @@ using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Linq;
-using System.Windows;
+using System.Windows.Forms;
 
 namespace KineticNapier.ADOFAIWorkbench
 {
@@ -11,7 +11,7 @@ namespace KineticNapier.ADOFAIWorkbench
         string Id { get; }
         string Title { get; }
         bool CanClose { get; }
-        FrameworkElement CreateView();
+        Control CreateView();
         void OnOpened();
         void OnClosed();
     }
@@ -42,7 +42,7 @@ namespace KineticNapier.ADOFAIWorkbench
                 Providers.Add(provider);
                 AddProviderPanes(provider);
             }
-            WpfWorkbenchWindowHost.NotifyRegistryChanged();
+            WinFormsWorkbenchWindowHost.NotifyRegistryChanged();
         }
 
         public static void UnregisterPaneProvider(IDockablePaneProvider provider)
@@ -53,7 +53,7 @@ namespace KineticNapier.ADOFAIWorkbench
                 if (!Providers.Remove(provider)) return;
                 RebuildRegistryLocked();
             }
-            WpfWorkbenchWindowHost.NotifyRegistryChanged();
+            WinFormsWorkbenchWindowHost.NotifyRegistryChanged();
         }
 
         public static IDockablePane FindPane(string id)
@@ -69,18 +69,18 @@ namespace KineticNapier.ADOFAIWorkbench
         public static bool OpenPane(string id)
         {
             if (FindPane(id) == null) return false;
-            WpfWorkbenchWindowHost.OpenPane(id);
+            WinFormsWorkbenchWindowHost.OpenPane(id);
             return true;
         }
 
         public static void ShowWindow()
         {
-            WpfWorkbenchWindowHost.ShowWindow();
+            WinFormsWorkbenchWindowHost.ShowWindow();
         }
 
         public static void HideWindow()
         {
-            WpfWorkbenchWindowHost.HideWindow();
+            WinFormsWorkbenchWindowHost.HideWindow();
         }
 
         public static void RunOnUnityThread(Action action)
@@ -90,7 +90,7 @@ namespace KineticNapier.ADOFAIWorkbench
 
         public static void RunOnUiThread(Action action)
         {
-            WpfWorkbenchWindowHost.Invoke(action);
+            WinFormsWorkbenchWindowHost.Invoke(action);
         }
 
         internal static void DrainUnityActions(int maxActions)
@@ -114,7 +114,7 @@ namespace KineticNapier.ADOFAIWorkbench
         internal static void RefreshAll()
         {
             lock (Gate) RebuildRegistryLocked();
-            WpfWorkbenchWindowHost.NotifyRegistryChanged();
+            WinFormsWorkbenchWindowHost.NotifyRegistryChanged();
         }
 
         private static void AddProviderPanes(IDockablePaneProvider provider)
