@@ -1,11 +1,13 @@
+using UnityEngine.SceneManagement;
 using UnityModManagerNet;
 
 namespace KineticNapier.ADOFAIWorkbench
 {
     public static class Main
     {
-        internal const string Version = "0.2.0";
+        internal const string Version = "0.2.1";
         private static bool enabled;
+        private static bool suspendedForGameplay;
 
         public static bool Load(UnityModManager.ModEntry entry)
         {
@@ -23,6 +25,7 @@ namespace KineticNapier.ADOFAIWorkbench
             enabled = value;
             if (!value)
             {
+                suspendedForGameplay = false;
                 NativeWorkbenchShell.SetVisible(false);
                 ChartCameraViewport.Restore();
                 StockEditorOverride.Restore();
@@ -33,13 +36,41 @@ namespace KineticNapier.ADOFAIWorkbench
         private static void OnUpdate(UnityModManager.ModEntry entry, float deltaTime)
         {
             if (!enabled) return;
+
             scnEditor editor = ADOBase.editor;
             if (editor == null)
             {
+                suspendedForGameplay = false;
                 NativeWorkbenchShell.SetVisible(false);
                 ChartCameraViewport.Restore();
                 StockEditorOverride.Restore();
                 return;
+            }
+
+            bool gameplay = string.Equals(SceneManager.GetActiveScene().name, "scnGame", System.StringComparison.Ordinal);
+            if (gameplay)
+            {
+                if (!suspendedForGameplay)
+                {
+                    // Editor playtest uses the same camera stack. Never leave the chart
+                    // viewport crop or Workbench chrome active while the level is playing.
+                    NativeWorkbenchShell.SetVisible(false);
+                    ChartCameraViewport.Restore();
+                    suspendedForGameplay = true;
+                }
+
+                // Unmounting Chart restores its stock panels. Hide them again while the
+                // gameplay scene owns the screen.
+                StockEditorOverride.Apply(editor);
+                return;
+            }
+
+            if (suspendedForGameplay)
+            {
+                suspendedForGameplay = false;
+                // SetVisible(false) unmounted all panes. Refreshing the registry raises
+                // RegistryChanged, invalidating the shell so Chart is mounted again.
+                Workbench.RefreshAll();
             }
 
             StockEditorOverride.Apply(editor);
