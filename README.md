@@ -7,8 +7,9 @@ ADOFAIWorkbench deliberately leaves the stock ADOFAI editor UI and rendering unt
 ## Features
 
 - Visual Studio-style tabbed panes powered by DockPanel Suite.
-- Drag panes to dock left / right / top / bottom or combine them as tabs.
+- Drag tool panes to dock left / right / top / bottom or combine them as tabs.
 - Floating tool windows.
+- Welcome is a fixed document page and is intentionally not draggable.
 - Close and reopen panes from the `Panes` menu.
 - Persist DockPanel layout with `SaveAsXml` / `LoadFromXml`.
 - Layout is stored at `%AppData%\ADOFAIWorkbench\layout.xml`.
@@ -51,6 +52,8 @@ DockPanel Suite is intentionally not loaded inside Unity's Mono process. Upstrea
 
 ## Pane API
 
+Other UMM mods can add Workbench panes by referencing `ADOFAIWorkbench.dll` and registering an `IDockablePaneProvider`.
+
 ```csharp
 public interface IDockablePane
 {
@@ -67,22 +70,31 @@ public interface IDockablePaneProvider
 }
 ```
 
-`WorkbenchPaneView` is a small process-safe UI description. Current primitives are text, buttons, rows and spacers.
+`WorkbenchPaneView` is a small process-safe UI description. Current primitives are text, buttons, text inputs, toggles, rows and spacers.
 
 ```csharp
-public WorkbenchPaneView BuildView()
+private sealed class MyPane : IDockablePane
 {
-    return new WorkbenchPaneView()
-        .Text("My Tool", 16f, true)
-        .BeginRow()
-        .Button("Run", "run", "", false)
-        .Button("Reset", "reset", "", false)
-        .EndRow();
-}
+    public string Id { get { return "example.my-pane"; } }
+    public string Title { get { return "My Tool"; } }
+    public bool CanClose { get { return true; } }
 
-public void HandleAction(string actionId, string argument)
-{
-    // Called on Unity's main thread.
+    public WorkbenchPaneView BuildView()
+    {
+        return new WorkbenchPaneView()
+            .Text("My Tool", 16f, true)
+            .Input("value", "set-value")
+            .Toggle("Enabled", "enabled", true)
+            .BeginRow()
+            .Button("Run", "run", "", false)
+            .Button("Reset", "reset", "", false)
+            .EndRow();
+    }
+
+    public void HandleAction(string actionId, string argument)
+    {
+        // Dispatched on Unity's main thread.
+    }
 }
 ```
 
@@ -90,9 +102,11 @@ Register, update and open panes with:
 
 ```csharp
 Workbench.RegisterPaneProvider(provider);
-Workbench.PublishPane("my-pane-id");
-Workbench.OpenPane("my-pane-id");
+Workbench.PublishPane("example.my-pane");
+Workbench.OpenPane("example.my-pane");
 ```
+
+Call `Workbench.PublishPane(id)` after the pane state changes so the external Host receives a fresh view snapshot. Call `Workbench.UnregisterPaneProvider(provider)` when the supplying mod is disabled or unloaded.
 
 ## Diagnostics
 
@@ -103,6 +117,14 @@ Connected | Panes=N
 ```
 
 If no pane registry has arrived, the `Panes` menu contains a disabled `(No panes received)` entry instead of appearing to do nothing.
+
+Unhandled Host UI exceptions are appended to:
+
+```text
+%AppData%\ADOFAIWorkbench\host-error.log
+```
+
+This is separate from the UnityModManager log because the docking Host is a separate process.
 
 ## Build output
 
