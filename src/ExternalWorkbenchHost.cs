@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
@@ -10,39 +11,36 @@ namespace KineticNapier.ADOFAIWorkbench
 {
     internal static class ExternalWorkbenchHost
     {
-        private static readonly object Gate = new object();
-        private static readonly Queue<string> Pending = new Queue<string>();
-        private static NamedPipeServerStream pipe;
-        private static StreamReader reader;
-        private static StreamWriter writer;
-        private static Thread pipeThread;
-        private static Process process;
-        private static string pipeName;
-        private static bool showRequested;
+        // Unity/ADOFAI threads are only allowed to enqueue messages here. They never
+        // touch a pipe, StreamWriter, WaitForConnection, or Process.Start directly.
+        private static readonly ConcurrentQueue<string> Outbound = new ConcurrentQueue<string>();
+        private static readonly AutoResetEvent OutboundSignal = new AutoResetEvent(false);
+        private static int workerRunning;
+        private static volatile bool showRequested;
 
         internal static void ShowWindow()
         {
             showRequested = true;
             EnsureStarted();
-            SendOrQueue("SHOW");
+            QueueMessage("SHOW");
         }
 
         internal static void HideWindow()
         {
             showRequested = false;
-            SendOrQueue("HIDE");
+            QueueMessage("HIDE");
         }
 
         internal static void OpenPane(string id)
         {
             EnsureStarted();
-            SendOrQueue("OPEN|" + Encode(id));
+            QueueMessage("OPEN|" + Encode(id));
         }
 
         internal static void RegistryChanged()
         {
             EnsureStarted();
-            SyncRegistry();
+            QueueRegistrySnapshot();
         }
 
         internal static void PublishPane(IDockablePane pane)
@@ -51,7 +49,7 @@ namespace KineticNapier.ADOFAIWorkbench
             try
             {
                 WorkbenchPaneView view = pane.BuildView() ?? new WorkbenchPaneView();
-                SendOrQueue("VIEW|" + Encode(pane.Id) + "|" + Encode(view.Serialize()));
+                QueueMessage("VIEW|" + Encode(pane.Id) + "|" + Encode(view.Serialize()));
             }
             catch (Exception ex)
             {
@@ -61,15 +59,27 @@ namespace KineticNapier.ADOFAIWorkbench
 
         private static void EnsureStarted()
         {
-            lock (Gate)
-            {
-                if (process != null)
-                {
-                    try { if (!process.HasExited) return; }
-                    catch { }
-                    process = null;
-                }
+            if (Interlocked.CompareExchange(ref workerRunning, 1, 0) != 0) return;
 
+            Thread worker = new Thread(WorkerMain)
+            {
+                IsBackground = true,
+                Name = "ADOFAI Workbench IPC"
+            };
+            worker.Start();
+        }
+
+        private static void WorkerMain()
+        {
+            NamedPipeServerStream server = null;
+            StreamReader reader = null;
+            StreamWriter writer = null;
+            Process hostProcess = null;
+            Thread readerThread = null;
+            volatileBox connected = new volatileBox();
+
+            try
+            {
                 string exe = Path.Combine(Main.ModDirectory ?? string.Empty, "ADOFAIWorkbench.Host.exe");
                 if (!File.Exists(exe))
                 {
@@ -77,14 +87,16 @@ namespace KineticNapier.ADOFAIWorkbench
                     return;
                 }
 
-                pipeName = "ADOFAIWorkbench_" + Process.GetCurrentProcess().Id + "_" + Guid.NewGuid().ToString("N");
-                pipeThread = new Thread(PipeThreadMain)
-                {
-                    IsBackground = true,
-                    Name = "ADOFAI Workbench IPC"
-                };
-                pipeThread.Start();
+                string pipeName = "ADOFAIWorkbench_" + Process.GetCurrentProcess().Id + "_" + Guid.NewGuid().ToString("N");
 
+                server = new NamedPipeServerStream(
+                    pipeName,
+                    PipeDirection.InOut,
+                    1,
+                    PipeTransmissionMode.Byte,
+                    PipeOptions.None);
+
+                // Process creation is intentionally on this worker thread as well.
                 var start = new ProcessStartInfo
                 {
                     FileName = exe,
@@ -92,53 +104,103 @@ namespace KineticNapier.ADOFAIWorkbench
                     WorkingDirectory = Main.ModDirectory,
                     UseShellExecute = false
                 };
-                process = Process.Start(start);
-                Main.Log("Started external Workbench host. PID=" + (process != null ? process.Id.ToString() : "?"));
-            }
-        }
+                hostProcess = Process.Start(start);
+                Main.Log("Started external Workbench host. PID=" + (hostProcess != null ? hostProcess.Id.ToString() : "?"));
 
-        private static void PipeThreadMain()
-        {
-            try
-            {
-                using (NamedPipeServerStream server = new NamedPipeServerStream(
-                    pipeName,
-                    PipeDirection.InOut,
-                    1,
-                    PipeTransmissionMode.Byte,
-                    PipeOptions.None))
+                Main.Log("Waiting for external Workbench host pipe connection on IPC worker...");
+                server.WaitForConnection();
+
+                reader = new StreamReader(server, Encoding.UTF8, false, 4096, true);
+                writer = new StreamWriter(server, new UTF8Encoding(false), 4096, true) { AutoFlush = true };
+                connected.Value = true;
+                Main.Log("External Workbench host connected.");
+
+                StreamReader capturedReader = reader;
+                readerThread = new Thread(delegate { ReaderMain(capturedReader, connected); })
                 {
-                    Main.Log("Waiting for external Workbench host pipe connection...");
-                    server.WaitForConnection();
-                    lock (Gate)
+                    IsBackground = true,
+                    Name = "ADOFAI Workbench IPC Reader"
+                };
+                readerThread.Start();
+
+                // A fresh connection always receives an authoritative registry snapshot.
+                QueueRegistrySnapshot();
+                if (showRequested) QueueMessage("SHOW");
+
+                while (connected.Value)
+                {
+                    string message;
+                    bool wroteAny = false;
+                    while (Outbound.TryDequeue(out message))
                     {
-                        pipe = server;
-                        reader = new StreamReader(server, Encoding.UTF8, false, 4096, true);
-                        writer = new StreamWriter(server, new UTF8Encoding(false), 4096, true) { AutoFlush = true };
+                        wroteAny = true;
+                        try
+                        {
+                            writer.WriteLine(message);
+                        }
+                        catch (Exception ex)
+                        {
+                            connected.Value = false;
+                            Main.LogError("External Workbench IPC write failed", ex);
+                            break;
+                        }
                     }
 
-                    Main.Log("External Workbench host connected.");
-                    FlushPending();
-                    SyncRegistry();
-                    if (showRequested) SendOrQueue("SHOW");
+                    if (!connected.Value) break;
+                    if (!wroteAny) OutboundSignal.WaitOne(100);
 
-                    string line;
-                    while (server.IsConnected && (line = reader.ReadLine()) != null)
-                        HandleHostMessage(line);
+                    if (hostProcess != null)
+                    {
+                        try
+                        {
+                            if (hostProcess.HasExited)
+                            {
+                                connected.Value = false;
+                                Main.Log("External Workbench host exited.");
+                            }
+                        }
+                        catch { }
+                    }
                 }
             }
             catch (Exception ex)
             {
-                Main.LogError("External Workbench IPC failed", ex);
+                Main.LogError("External Workbench IPC worker failed", ex);
             }
             finally
             {
-                lock (Gate)
-                {
-                    pipe = null;
-                    reader = null;
-                    writer = null;
-                }
+                connected.Value = false;
+                try { if (reader != null) reader.Dispose(); } catch { }
+                try { if (writer != null) writer.Dispose(); } catch { }
+                try { if (server != null) server.Dispose(); } catch { }
+                try { if (hostProcess != null) hostProcess.Dispose(); } catch { }
+
+                Interlocked.Exchange(ref workerRunning, 0);
+
+                // If callers queued work while the connection was being torn down,
+                // start a new worker. This check is non-blocking and has no pipe I/O.
+                if (!Outbound.IsEmpty) EnsureStarted();
+            }
+        }
+
+        private static void ReaderMain(StreamReader reader, volatileBox connected)
+        {
+            try
+            {
+                string line;
+                while (connected.Value && (line = reader.ReadLine()) != null)
+                    HandleHostMessage(line);
+            }
+            catch (ObjectDisposedException) { }
+            catch (IOException) { }
+            catch (Exception ex)
+            {
+                Main.LogError("External Workbench IPC reader failed", ex);
+            }
+            finally
+            {
+                connected.Value = false;
+                OutboundSignal.Set();
             }
         }
 
@@ -156,47 +218,24 @@ namespace KineticNapier.ADOFAIWorkbench
             }
         }
 
-        private static void SyncRegistry()
+        private static void QueueRegistrySnapshot()
         {
             IList<IDockablePane> panes = Workbench.GetPanesSnapshot();
-            SendOrQueue("SYNC_BEGIN");
+            QueueMessage("SYNC_BEGIN");
             for (int i = 0; i < panes.Count; i++)
             {
                 IDockablePane pane = panes[i];
-                SendOrQueue("PANE|" + Encode(pane.Id) + "|" + Encode(pane.Title) + "|" + (pane.CanClose ? "1" : "0"));
+                QueueMessage("PANE|" + Encode(pane.Id) + "|" + Encode(pane.Title) + "|" + (pane.CanClose ? "1" : "0"));
                 PublishPane(pane);
             }
-            SendOrQueue("SYNC_END");
+            QueueMessage("SYNC_END");
         }
 
-        private static void SendOrQueue(string message)
+        private static void QueueMessage(string message)
         {
             if (string.IsNullOrEmpty(message)) return;
-            lock (Gate)
-            {
-                if (writer == null)
-                {
-                    Pending.Enqueue(message);
-                    return;
-                }
-
-                try { writer.WriteLine(message); }
-                catch
-                {
-                    Pending.Enqueue(message);
-                    writer = null;
-                }
-            }
-        }
-
-        private static void FlushPending()
-        {
-            lock (Gate)
-            {
-                if (writer == null) return;
-                while (Pending.Count > 0)
-                    writer.WriteLine(Pending.Dequeue());
-            }
+            Outbound.Enqueue(message);
+            OutboundSignal.Set();
         }
 
         private static string Encode(string value)
@@ -208,6 +247,13 @@ namespace KineticNapier.ADOFAIWorkbench
         {
             if (string.IsNullOrEmpty(value)) return string.Empty;
             return Encoding.UTF8.GetString(Convert.FromBase64String(value));
+        }
+
+        // C# 7.3 has no ref-like volatile local. This tiny holder lets the reader and
+        // writer worker communicate connection shutdown without taking a lock.
+        private sealed class volatileBox
+        {
+            public volatile bool Value;
         }
     }
 }
