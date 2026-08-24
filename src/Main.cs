@@ -7,7 +7,7 @@ namespace KineticNapier.ADOFAIWorkbench
 {
     public static class Main
     {
-        internal const string Version = "0.7.0";
+        internal const string Version = "0.7.1";
         private static bool enabled;
         private static UnityModManager.ModEntry modEntry;
 
@@ -55,8 +55,6 @@ namespace KineticNapier.ADOFAIWorkbench
             enabled = false;
             try
             {
-                // Non-blocking: this only flips local flags and wakes the IPC worker.
-                // The Host also watches the ADOFAI PID, so it cannot survive the game.
                 ExternalWorkbenchHost.Shutdown();
                 return true;
             }
