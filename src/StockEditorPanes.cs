@@ -100,6 +100,7 @@ namespace KineticNapier.ADOFAIWorkbench
         internal static GameObject Resolve(scnEditor editor, string name)
         {
             if (editor == null || string.IsNullOrEmpty(name)) return null;
+
             Type type = editor.GetType();
             const System.Reflection.BindingFlags flags = System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.Public;
             object value = null;
@@ -114,7 +115,26 @@ namespace KineticNapier.ADOFAIWorkbench
             GameObject go = value as GameObject;
             if (go != null) return go;
             Component component = value as Component;
-            return component != null ? component.gameObject : null;
+            if (component != null) return component.gameObject;
+
+            // Some important stock editor objects (notably bottomPanel in current ADOFAI)
+            // are scene children but are not exposed as public scnEditor members.
+            Transform found = FindDescendantByName(editor.transform, name);
+            return found != null ? found.gameObject : null;
+        }
+
+        private static Transform FindDescendantByName(Transform root, string name)
+        {
+            if (root == null) return null;
+            for (int i = 0; i < root.childCount; i++)
+            {
+                Transform child = root.GetChild(i);
+                if (child == null) continue;
+                if (string.Equals(child.name, name, StringComparison.Ordinal)) return child;
+                Transform nested = FindDescendantByName(child, name);
+                if (nested != null) return nested;
+            }
+            return null;
         }
 
         internal struct RectState
