@@ -29,9 +29,6 @@ namespace KineticNapier.ADOFAIWorkbench
             if (go == null) return;
             claimed.Add(go);
 
-            // Apply() may have hidden this object or one of its descendants earlier in
-            // the same frame, before the pane had a chance to claim the subtree.
-            // Restore those saved states immediately when ownership moves to a pane.
             var restore = new List<GameObject>();
             foreach (KeyValuePair<GameObject, bool> pair in originalStates)
             {
@@ -94,6 +91,8 @@ namespace KineticNapier.ADOFAIWorkbench
 
         private static GameObject Resolve(scnEditor target, string name)
         {
+            if (target == null || string.IsNullOrEmpty(name)) return null;
+
             Type type = target.GetType();
             const System.Reflection.BindingFlags flags = System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.Public;
             object value = null;
@@ -108,7 +107,24 @@ namespace KineticNapier.ADOFAIWorkbench
             GameObject go = value as GameObject;
             if (go != null) return go;
             Component component = value as Component;
-            return component != null ? component.gameObject : null;
+            if (component != null) return component.gameObject;
+
+            Transform found = FindDescendantByName(target.transform, name);
+            return found != null ? found.gameObject : null;
+        }
+
+        private static Transform FindDescendantByName(Transform root, string name)
+        {
+            if (root == null) return null;
+            for (int i = 0; i < root.childCount; i++)
+            {
+                Transform child = root.GetChild(i);
+                if (child == null) continue;
+                if (string.Equals(child.name, name, StringComparison.Ordinal)) return child;
+                Transform nested = FindDescendantByName(child, name);
+                if (nested != null) return nested;
+            }
+            return null;
         }
     }
 }
