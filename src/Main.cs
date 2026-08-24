@@ -4,7 +4,7 @@ namespace KineticNapier.ADOFAIWorkbench
 {
     public static class Main
     {
-        internal const string Version = "0.3.0";
+        internal const string Version = "0.3.1";
         private static bool enabled;
 
         public static bool Load(UnityModManager.ModEntry entry)
@@ -12,7 +12,7 @@ namespace KineticNapier.ADOFAIWorkbench
             entry.OnToggle = OnToggle;
             entry.OnUpdate = OnUpdate;
             Workbench.RegisterPaneProvider(new WelcomePaneProvider());
-            entry.Logger.Log("ADOFAI Workbench v" + Version + " loaded (standalone WPF window mode).");
+            entry.Logger.Log("ADOFAI Workbench v" + Version + " loaded (standalone WinForms window mode).");
             return true;
         }
 
