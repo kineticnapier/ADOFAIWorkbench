@@ -6,9 +6,14 @@ namespace KineticNapier.ADOFAIWorkbench
 {
     internal static class StockEditorOverride
     {
+        private const int MissingResolveRetryFrames = 120;
+
         private static scnEditor editor;
         private static readonly Dictionary<GameObject, bool> originalStates = new Dictionary<GameObject, bool>();
         private static readonly HashSet<GameObject> claimed = new HashSet<GameObject>();
+        private static readonly Dictionary<string, GameObject> resolved = new Dictionary<string, GameObject>(StringComparer.Ordinal);
+        private static int nextMissingResolveFrame;
+
         private static readonly string[] MemberNames =
         {
             "settingsPanel",
@@ -52,12 +57,17 @@ namespace KineticNapier.ADOFAIWorkbench
             {
                 Restore();
                 editor = activeEditor;
+                ResolveAll(activeEditor);
+            }
+            else if (Time.frameCount >= nextMissingResolveFrame)
+            {
+                RefreshMissing(activeEditor);
             }
 
             for (int i = 0; i < MemberNames.Length; i++)
             {
-                GameObject go = Resolve(activeEditor, MemberNames[i]);
-                if (go == null || IsClaimed(go)) continue;
+                GameObject go;
+                if (!resolved.TryGetValue(MemberNames[i], out go) || go == null || IsClaimed(go)) continue;
                 if (!originalStates.ContainsKey(go)) originalStates.Add(go, go.activeSelf);
                 if (go.activeSelf) go.SetActive(false);
             }
@@ -69,7 +79,29 @@ namespace KineticNapier.ADOFAIWorkbench
                 if (pair.Key != null && !IsClaimed(pair.Key)) pair.Key.SetActive(pair.Value);
             originalStates.Clear();
             claimed.Clear();
+            resolved.Clear();
+            nextMissingResolveFrame = 0;
             editor = null;
+        }
+
+        private static void ResolveAll(scnEditor target)
+        {
+            resolved.Clear();
+            for (int i = 0; i < MemberNames.Length; i++)
+                resolved[MemberNames[i]] = Resolve(target, MemberNames[i]);
+            nextMissingResolveFrame = Time.frameCount + MissingResolveRetryFrames;
+        }
+
+        private static void RefreshMissing(scnEditor target)
+        {
+            for (int i = 0; i < MemberNames.Length; i++)
+            {
+                string name = MemberNames[i];
+                GameObject go;
+                if (resolved.TryGetValue(name, out go) && go != null) continue;
+                resolved[name] = Resolve(target, name);
+            }
+            nextMissingResolveFrame = Time.frameCount + MissingResolveRetryFrames;
         }
 
         private static bool IsClaimed(GameObject go)
