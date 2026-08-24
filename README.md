@@ -2,7 +2,7 @@
 
 A standalone IDE-style tool window for A Dance of Fire and Ice mods.
 
-ADOFAIWorkbench deliberately leaves the stock ADOFAI editor UI and rendering untouched. Since ADOFAI runs on Unity/Mono, the docking UI is hosted in a separate .NET Framework 4.8 process and communicates with the mod through a named pipe.
+ADOFAIWorkbench deliberately leaves the stock ADOFAI editor UI and rendering untouched. Since ADOFAI runs on Unity/Mono, the docking UI is hosted in a separate .NET Framework 4.8 process. The two processes communicate over an authenticated loopback-only TCP connection (`127.0.0.1`).
 
 ## Features
 
@@ -15,6 +15,8 @@ ADOFAIWorkbench deliberately leaves the stock ADOFAI editor UI and rendering unt
 - Window bounds are stored separately at `%AppData%\ADOFAIWorkbench\window.txt`.
 - Pane actions are dispatched back to Unity's main thread.
 - ADOFAI's Canvas, camera and stock editor controls are never reparented or cropped.
+- The Host watches the parent ADOFAI PID and terminates automatically when the game exits.
+- The Unity side never performs socket I/O or process waits on the Unity main thread.
 
 ## Architecture
 
@@ -27,7 +29,8 @@ ADOFAI / Unity / Mono process
 | - Unity main-thread queue     |
 +---------------+---------------+
                 |
-                | named pipe
+                | 127.0.0.1 TCP
+                | random per-run authentication token
                 | pane views / actions
                 v
 ADOFAIWorkbench.Host.exe
@@ -41,6 +44,8 @@ ADOFAIWorkbench.Host.exe
 | - layout persistence          |
 +-------------------------------+
 ```
+
+The bridge opens an ephemeral loopback port and launches the Host with the port, a random per-run token and the ADOFAI parent PID. The Host must authenticate with that token before pane data is sent. Nothing listens on a public network interface.
 
 DockPanel Suite is intentionally not loaded inside Unity's Mono process. Upstream disables end-user docking when running on Mono, so the external host is part of the design rather than just an isolation convenience.
 
@@ -88,6 +93,16 @@ Workbench.RegisterPaneProvider(provider);
 Workbench.PublishPane("my-pane-id");
 Workbench.OpenPane("my-pane-id");
 ```
+
+## Diagnostics
+
+The Host status bar reports its IPC state. After a successful registry sync it shows:
+
+```text
+Connected | Panes=N
+```
+
+If no pane registry has arrived, the `Panes` menu contains a disabled `(No panes received)` entry instead of appearing to do nothing.
 
 ## Build output
 
