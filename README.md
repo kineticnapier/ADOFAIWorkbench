@@ -6,15 +6,15 @@ ADOFAIWorkbench deliberately leaves the stock ADOFAI editor UI and rendering unt
 
 ## Features
 
-- Recursive horizontal / vertical split tree.
-- Tabbed panes in every dock group.
-- Drag tabs between groups.
-- Drop a tab near the left / right / top / bottom edge of a group to create a new split there.
-- Close and reopen panes.
-- Close groups by merging their panes into the neighboring group.
-- Persist window bounds, split ratios, pane placement, tab order, active tabs and focused group.
+- Visual Studio-style tabbed panes powered by DockPanel Suite.
+- Drag panes to dock left / right / top / bottom or combine them as tabs.
+- Floating tool windows.
+- Close and reopen panes from the `Panes` menu.
+- Persist DockPanel layout with `SaveAsXml` / `LoadFromXml`.
 - Layout is stored at `%AppData%\ADOFAIWorkbench\layout.xml`.
+- Window bounds are stored separately at `%AppData%\ADOFAIWorkbench\window.txt`.
 - Consumer actions can be queued safely back to Unity's main thread.
+- DockPanel dependencies are resolved explicitly from the Workbench mod directory so UnityModManager load context does not have to guess their location.
 
 ## Architecture
 
@@ -24,11 +24,11 @@ ADOFAI / Unity main thread
         | Workbench.RunOnUnityThread(...)
         | command queue
         v
-ADOFAI Workbench UI thread
+ADOFAI Workbench UI thread (STA)
         |
-        +-- recursive split tree
-        +-- tab groups
-        +-- consumer panes
+        +-- DockPanel Suite
+        +-- docked / floating panes
+        +-- consumer WinForms controls
 ```
 
 Workbench does not reparent stock ADOFAI controls, crop the game camera, or replace the level editor Canvas.
@@ -69,3 +69,11 @@ Workbench.RunOnUnityThread(() =>
 ```
 
 Use `Workbench.RunOnUiThread(...)` to publish snapshots or other UI updates back to the Workbench window.
+
+## Third-party software
+
+ADOFAIWorkbench uses DockPanel Suite 3.1.1 and its VS2015 theme package. DockPanel Suite is licensed under the MIT License. The required copyright and permission notice is kept in `licenses/DockPanelSuite-MIT.txt` and is also included in release archives.
+
+See `THIRD_PARTY_NOTICES.md` for details.
+
+The DockPanel Suite license does not by itself define the license of ADOFAIWorkbench as a whole.
