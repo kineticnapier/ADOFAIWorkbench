@@ -6,9 +6,12 @@ namespace KineticNapier.ADOFAIWorkbench
 {
     public static class Main
     {
-        internal const string Version = "0.2.3";
+        internal const string Version = "0.2.4";
+        private const int GameplayResumeDelayFrames = 4;
+
         private static bool enabled;
         private static bool suspendedForGameplay;
+        private static int resumeWorkbenchFrame = -1;
 
         private static bool sceneReflectionInitialized;
         private static MethodInfo getActiveSceneMethod;
@@ -31,6 +34,7 @@ namespace KineticNapier.ADOFAIWorkbench
             if (!value)
             {
                 suspendedForGameplay = false;
+                resumeWorkbenchFrame = -1;
                 NativeWorkbenchShell.SetVisible(false);
                 ChartCameraViewport.Restore();
                 StockEditorOverride.Restore();
@@ -46,13 +50,19 @@ namespace KineticNapier.ADOFAIWorkbench
             if (editor == null)
             {
                 suspendedForGameplay = false;
+                resumeWorkbenchFrame = -1;
                 NativeWorkbenchShell.SetVisible(false);
                 ChartCameraViewport.Restore();
                 StockEditorOverride.Restore();
                 return;
             }
 
-            bool gameplay = string.Equals(GetActiveSceneName(), "scnGame", StringComparison.Ordinal);
+            // inStrictlyEditingMode is ADOFAI's own editor/play-mode flag.  Keep the
+            // scene-name check as a secondary signal because scene activation can lead or
+            // trail the editor flag by a frame during transitions.
+            bool gameplay = !editor.inStrictlyEditingMode
+                || string.Equals(GetActiveSceneName(), "scnGame", StringComparison.Ordinal);
+
             if (gameplay)
             {
                 if (!suspendedForGameplay)
@@ -60,15 +70,31 @@ namespace KineticNapier.ADOFAIWorkbench
                     NativeWorkbenchShell.SetVisible(false);
                     ChartCameraViewport.Restore();
                     suspendedForGameplay = true;
+                    resumeWorkbenchFrame = -1;
                 }
 
+                ChartCameraViewport.ForceFullScreen();
                 StockEditorOverride.Apply(editor);
                 return;
             }
 
             if (suspendedForGameplay)
             {
+                // SwitchToEditMode() clears the gameplay HUD, but several UI/camera
+                // objects settle over the next frames.  Keep the stock camera fullscreen
+                // long enough to repaint the whole framebuffer before docking it again.
+                if (resumeWorkbenchFrame < 0)
+                    resumeWorkbenchFrame = UnityEngine.Time.frameCount + GameplayResumeDelayFrames;
+
+                if (UnityEngine.Time.frameCount < resumeWorkbenchFrame)
+                {
+                    ChartCameraViewport.ForceFullScreen();
+                    StockEditorOverride.Apply(editor);
+                    return;
+                }
+
                 suspendedForGameplay = false;
+                resumeWorkbenchFrame = -1;
                 Workbench.RefreshAll();
             }
 
