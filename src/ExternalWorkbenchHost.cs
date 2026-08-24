@@ -75,7 +75,6 @@ namespace KineticNapier.ADOFAIWorkbench
             StreamReader reader = null;
             StreamWriter writer = null;
             Process hostProcess = null;
-            Thread readerThread = null;
             volatileBox connected = new volatileBox();
 
             try
@@ -116,7 +115,7 @@ namespace KineticNapier.ADOFAIWorkbench
                 Main.Log("External Workbench host connected.");
 
                 StreamReader capturedReader = reader;
-                readerThread = new Thread(delegate { ReaderMain(capturedReader, connected); })
+                Thread readerThread = new Thread(delegate { ReaderMain(capturedReader, connected); })
                 {
                     IsBackground = true,
                     Name = "ADOFAI Workbench IPC Reader"
@@ -174,12 +173,7 @@ namespace KineticNapier.ADOFAIWorkbench
                 try { if (writer != null) writer.Dispose(); } catch { }
                 try { if (server != null) server.Dispose(); } catch { }
                 try { if (hostProcess != null) hostProcess.Dispose(); } catch { }
-
                 Interlocked.Exchange(ref workerRunning, 0);
-
-                // If callers queued work while the connection was being torn down,
-                // start a new worker. This check is non-blocking and has no pipe I/O.
-                if (!Outbound.IsEmpty) EnsureStarted();
             }
         }
 
@@ -249,8 +243,6 @@ namespace KineticNapier.ADOFAIWorkbench
             return Encoding.UTF8.GetString(Convert.FromBase64String(value));
         }
 
-        // C# 7.3 has no ref-like volatile local. This tiny holder lets the reader and
-        // writer worker communicate connection shutdown without taking a lock.
         private sealed class volatileBox
         {
             public volatile bool Value;
