@@ -15,17 +15,15 @@
   </PropertyGroup>
   <ItemGroup>
     <Reference Include="UnityModManager"><HintPath>$(UmmDir)\UnityModManager.dll</HintPath><Private>false</Private></Reference>
-    <Reference Include="PresentationCore" />
-    <Reference Include="PresentationFramework" />
-    <Reference Include="WindowsBase" />
-    <Reference Include="System.Xaml" />
+    <Reference Include="System.Windows.Forms" />
+    <Reference Include="System.Drawing" />
     <Reference Include="System" />
     <Reference Include="System.Core" />
   </ItemGroup>
   <ItemGroup>
     <Compile Include="Main.cs" />
     <Compile Include="Workbench.cs" />
-    <Compile Include="WpfWorkbenchWindow.cs" />
+    <Compile Include="WinFormsWorkbenchWindow.cs" />
     <Compile Include="WelcomePane.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
   </ItemGroup>
