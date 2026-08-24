@@ -33,6 +33,7 @@
     <Compile Include="DockModel.cs" />
     <Compile Include="NativeWorkbenchShell.cs" />
     <Compile Include="StockEditorOverride.cs" />
+    <Compile Include="ChartPane.cs" />
     <Compile Include="StockEditorPanes.cs" />
     <Compile Include="WelcomePane.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
