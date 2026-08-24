@@ -4,13 +4,14 @@ namespace KineticNapier.ADOFAIWorkbench
 {
     public static class Main
     {
-        internal const string Version = "0.1.3";
+        internal const string Version = "0.1.4";
         private static bool enabled;
 
         public static bool Load(UnityModManager.ModEntry entry)
         {
             entry.OnToggle = OnToggle;
             entry.OnUpdate = OnUpdate;
+            Workbench.RegisterPaneProvider(new ChartPaneProvider());
             Workbench.RegisterPaneProvider(new WelcomePaneProvider());
             Workbench.RegisterPaneProvider(new StockEditorPaneProvider());
             entry.Logger.Log("ADOFAI Workbench v" + Version + " loaded.");
@@ -23,6 +24,7 @@ namespace KineticNapier.ADOFAIWorkbench
             if (!value)
             {
                 NativeWorkbenchShell.SetVisible(false);
+                ChartCameraViewport.Restore();
                 StockEditorOverride.Restore();
             }
             return true;
@@ -35,6 +37,7 @@ namespace KineticNapier.ADOFAIWorkbench
             if (editor == null)
             {
                 NativeWorkbenchShell.SetVisible(false);
+                ChartCameraViewport.Restore();
                 StockEditorOverride.Restore();
                 return;
             }
