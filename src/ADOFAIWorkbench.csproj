@@ -1,0 +1,39 @@
+<Project ToolsVersion="15.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <PropertyGroup>
+    <Configuration Condition=" '$(Configuration)' == '' ">Release</Configuration>
+    <Platform Condition=" '$(Platform)' == '' ">AnyCPU</Platform>
+    <ProjectGuid>{2E5A57A0-3B6A-4EBE-A809-5B8D874D7792}</ProjectGuid>
+    <OutputType>Library</OutputType>
+    <RootNamespace>KineticNapier.ADOFAIWorkbench</RootNamespace>
+    <AssemblyName>ADOFAIWorkbench</AssemblyName>
+    <TargetFrameworkVersion>v4.8</TargetFrameworkVersion>
+    <LangVersion>7.3</LangVersion>
+    <DebugSymbols>true</DebugSymbols>
+    <DebugType>portable</DebugType>
+    <Optimize>true</Optimize>
+    <OutputPath>bin\$(Configuration)\</OutputPath>
+    <EditorToolkitRoot Condition=" '$(EditorToolkitRoot)' == '' ">$(MSBuildThisFileDirectory)..\..\AdofaiEditorToolkit</EditorToolkitRoot>
+    <EditorToolkitCoreDll Condition=" '$(EditorToolkitCoreDll)' == '' ">$(EditorToolkitRoot)\src\ADOFAI.EditorToolkit\bin\$(Configuration)\net48\ADOFAI.EditorToolkit.dll</EditorToolkitCoreDll>
+    <EditorToolkitGameDll Condition=" '$(EditorToolkitGameDll)' == '' ">$(EditorToolkitRoot)\src\ADOFAI.EditorToolkit.ADOFAI\bin\$(Configuration)\ADOFAI.EditorToolkit.ADOFAI.dll</EditorToolkitGameDll>
+  </PropertyGroup>
+  <ItemGroup>
+    <Reference Include="Assembly-CSharp"><HintPath>$(GameManagedDir)\Assembly-CSharp.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="UnityEngine.CoreModule"><HintPath>$(GameManagedDir)\UnityEngine.CoreModule.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="UnityEngine.UIModule"><HintPath>$(GameManagedDir)\UnityEngine.UIModule.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="UnityModManager"><HintPath>$(UmmDir)\UnityModManager.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="ADOFAI.EditorToolkit"><HintPath>$(EditorToolkitCoreDll)</HintPath><Private>true</Private></Reference>
+    <Reference Include="ADOFAI.EditorToolkit.ADOFAI"><HintPath>$(EditorToolkitGameDll)</HintPath><Private>true</Private></Reference>
+    <Reference Include="System" />
+    <Reference Include="System.Core" />
+  </ItemGroup>
+  <ItemGroup>
+    <Compile Include="Main.cs" />
+    <Compile Include="Workbench.cs" />
+    <Compile Include="DockModel.cs" />
+    <Compile Include="NativeWorkbenchShell.cs" />
+    <Compile Include="StockEditorOverride.cs" />
+    <Compile Include="WelcomePane.cs" />
+    <Compile Include="Properties\AssemblyInfo.cs" />
+  </ItemGroup>
+  <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
+</Project>

@@ -1,0 +1,9 @@
+{
+  "Id": "ADOFAIWorkbench",
+  "DisplayName": "ADOFAI Workbench",
+  "Author": "Kinetic Napier / OpenAI",
+  "Version": "0.1.0",
+  "ManagerVersion": "0.27.14",
+  "AssemblyName": "ADOFAIWorkbench.dll",
+  "EntryMethod": "KineticNapier.ADOFAIWorkbench.Main.Load"
+}
