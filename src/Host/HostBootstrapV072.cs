@@ -29,6 +29,7 @@ namespace KineticNapier.ADOFAIWorkbench.Host
             using (TcpHostForm form = new TcpHostForm(connection))
             {
                 FixChromeLayout(form);
+                InstallCloseBehavior(form);
 
                 form.Shown += delegate
                 {
@@ -57,6 +58,23 @@ namespace KineticNapier.ADOFAIWorkbench.Host
                 Name = "ADOFAI Workbench Parent Guard"
             };
             thread.Start();
+        }
+
+        private static void InstallCloseBehavior(TcpHostForm form)
+        {
+            // TcpHostForm's own close handler intentionally prevents a user-close
+            // from terminating the host, but older builds hid the form completely.
+            // Keep it discoverable instead: X minimizes to the taskbar, while
+            // EXIT/disconnect/ADOFAI shutdown still closes the process normally.
+            form.FormClosing += delegate(object sender, FormClosingEventArgs e)
+            {
+                if (e.CloseReason != CloseReason.UserClosing) return;
+
+                e.Cancel = true;
+                form.ShowInTaskbar = true;
+                if (!form.Visible) form.Show();
+                form.WindowState = FormWindowState.Minimized;
+            };
         }
 
         private static void FixChromeLayout(TcpHostForm form)
