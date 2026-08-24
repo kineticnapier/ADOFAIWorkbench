@@ -17,6 +17,8 @@ namespace KineticNapier.ADOFAIWorkbench
         private static readonly AutoResetEvent OutboundSignal = new AutoResetEvent(false);
         private static int workerRunning;
         private static volatile bool showRequested;
+        private static volatile bool shutdownRequested;
+        private static volatile bool hostReady;
 
         internal static void ShowWindow()
         {
@@ -57,8 +59,17 @@ namespace KineticNapier.ADOFAIWorkbench
             }
         }
 
+        internal static void Shutdown()
+        {
+            shutdownRequested = true;
+            showRequested = false;
+            QueueMessage("HIDE");
+            OutboundSignal.Set();
+        }
+
         private static void EnsureStarted()
         {
+            if (shutdownRequested) return;
             if (Interlocked.CompareExchange(ref workerRunning, 1, 0) != 0) return;
 
             Thread worker = new Thread(WorkerMain)
@@ -109,6 +120,8 @@ namespace KineticNapier.ADOFAIWorkbench
                 Main.Log("Waiting for external Workbench host pipe connection on IPC worker...");
                 server.WaitForConnection();
 
+                if (shutdownRequested) return;
+
                 reader = new StreamReader(server, Encoding.UTF8, false, 4096, true);
                 writer = new StreamWriter(server, new UTF8Encoding(false), 4096, true) { AutoFlush = true };
                 connected.Value = true;
@@ -122,11 +135,13 @@ namespace KineticNapier.ADOFAIWorkbench
                 };
                 readerThread.Start();
 
-                // A fresh connection always receives an authoritative registry snapshot.
+                // Send a provisional snapshot immediately. The host sends its
+                // "Host connected" LOG only after its reader is running; HandleHostMessage
+                // sends another authoritative snapshot at that point.
                 QueueRegistrySnapshot();
                 if (showRequested) QueueMessage("SHOW");
 
-                while (connected.Value)
+                while (connected.Value && !shutdownRequested)
                 {
                     string message;
                     bool wroteAny = false;
@@ -145,7 +160,7 @@ namespace KineticNapier.ADOFAIWorkbench
                         }
                     }
 
-                    if (!connected.Value) break;
+                    if (!connected.Value || shutdownRequested) break;
                     if (!wroteAny) OutboundSignal.WaitOne(100);
 
                     if (hostProcess != null)
@@ -164,15 +179,28 @@ namespace KineticNapier.ADOFAIWorkbench
             }
             catch (Exception ex)
             {
-                Main.LogError("External Workbench IPC worker failed", ex);
+                if (!shutdownRequested)
+                    Main.LogError("External Workbench IPC worker failed", ex);
             }
             finally
             {
                 connected.Value = false;
+                hostReady = false;
                 try { if (reader != null) reader.Dispose(); } catch { }
                 try { if (writer != null) writer.Dispose(); } catch { }
                 try { if (server != null) server.Dispose(); } catch { }
-                try { if (hostProcess != null) hostProcess.Dispose(); } catch { }
+
+                if (hostProcess != null)
+                {
+                    try
+                    {
+                        if (shutdownRequested && !hostProcess.HasExited)
+                            hostProcess.Kill();
+                    }
+                    catch { }
+                    try { hostProcess.Dispose(); } catch { }
+                }
+
                 Interlocked.Exchange(ref workerRunning, 0);
             }
         }
@@ -182,18 +210,20 @@ namespace KineticNapier.ADOFAIWorkbench
             try
             {
                 string line;
-                while (connected.Value && (line = reader.ReadLine()) != null)
+                while (!shutdownRequested && connected.Value && (line = reader.ReadLine()) != null)
                     HandleHostMessage(line);
             }
             catch (ObjectDisposedException) { }
             catch (IOException) { }
             catch (Exception ex)
             {
-                Main.LogError("External Workbench IPC reader failed", ex);
+                if (!shutdownRequested)
+                    Main.LogError("External Workbench IPC reader failed", ex);
             }
             finally
             {
                 connected.Value = false;
+                hostReady = false;
                 OutboundSignal.Set();
             }
         }
@@ -208,7 +238,17 @@ namespace KineticNapier.ADOFAIWorkbench
             }
             else if (parts.Length >= 2 && string.Equals(parts[0], "LOG", StringComparison.Ordinal))
             {
-                Main.Log("Host: " + Decode(parts[1]));
+                string message = Decode(parts[1]);
+                Main.Log("Host: " + message);
+
+                // Host emits this only after its pipe reader thread is running. Treat
+                // it as the READY handshake and resend the complete pane registry.
+                if (!hostReady && message.StartsWith("Host connected", StringComparison.OrdinalIgnoreCase))
+                {
+                    hostReady = true;
+                    QueueRegistrySnapshot();
+                    if (showRequested) QueueMessage("SHOW");
+                }
             }
         }
 
