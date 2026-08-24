@@ -8,8 +8,8 @@ namespace KineticNapier.ADOFAIWorkbench
     {
         public IEnumerable<IDockablePane> CreatePanes()
         {
-            yield return new StockEditorPane("adofai.settings", "ADOFAI Settings", "settingsPanel");
-            yield return new StockEditorPane("adofai.events", "ADOFAI Events", "levelEventsPanel");
+            // Settings, event inspector and bottom controls now belong to ADOFAI Chart.
+            // File controls remain useful as a genuinely independent tool pane.
             yield return new StockEditorPane("adofai.file", "ADOFAI File", "fileActionsPanel", "fileActions");
         }
     }
@@ -54,11 +54,13 @@ namespace KineticNapier.ADOFAIWorkbench
 
             originalParent = rect.parent;
             originalSiblingIndex = rect.GetSiblingIndex();
-            originalActive = target.activeSelf;
             originalRect = RectState.Capture(rect);
             Vector2 nativeSize = new Vector2(Mathf.Max(1f, rect.rect.width), Mathf.Max(1f, rect.rect.height));
 
+            // Claim first: Apply() may already have hidden the stock object earlier in this frame.
             StockEditorOverride.Claim(target);
+            originalActive = target.activeSelf;
+
             rect.SetParent(parent, false);
             rect.anchorMin = new Vector2(0.5f, 0.5f);
             rect.anchorMax = new Vector2(0.5f, 0.5f);
@@ -95,8 +97,9 @@ namespace KineticNapier.ADOFAIWorkbench
             return null;
         }
 
-        private static GameObject Resolve(scnEditor editor, string name)
+        internal static GameObject Resolve(scnEditor editor, string name)
         {
+            if (editor == null || string.IsNullOrEmpty(name)) return null;
             Type type = editor.GetType();
             const System.Reflection.BindingFlags flags = System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.Public;
             object value = null;
@@ -114,7 +117,7 @@ namespace KineticNapier.ADOFAIWorkbench
             return component != null ? component.gameObject : null;
         }
 
-        private struct RectState
+        internal struct RectState
         {
             internal Vector2 AnchorMin;
             internal Vector2 AnchorMax;
