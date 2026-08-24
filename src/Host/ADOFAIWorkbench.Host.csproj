@@ -23,7 +23,7 @@
     <PackageReference Include="DockPanelSuite.ThemeVS2015" Version="3.1.1" />
   </ItemGroup>
   <ItemGroup>
-    <Compile Include="HostMainV071.cs" />
+    <Compile Include="HostCoreV080.cs" />
     <Compile Include="HostBootstrapV072.cs" />
   </ItemGroup>
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
