@@ -115,7 +115,7 @@ namespace KineticNapier.ADOFAIWorkbench
                 Main.Log("External Workbench host connected.");
 
                 StreamReader capturedReader = reader;
-                Thread readerThread = new Thread(delegate { ReaderMain(capturedReader, connected); })
+                Thread readerThread = new Thread(new ThreadStart(delegate { ReaderMain(capturedReader, connected); }))
                 {
                     IsBackground = true,
                     Name = "ADOFAI Workbench IPC Reader"
