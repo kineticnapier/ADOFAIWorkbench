@@ -10,7 +10,7 @@
     <LangVersion>7.3</LangVersion>
     <Optimize>true</Optimize>
     <OutputPath>bin\$(Configuration)\</OutputPath>
-    <StartupObject>KineticNapier.ADOFAIWorkbench.Host.TcpProgram</StartupObject>
+    <StartupObject>KineticNapier.ADOFAIWorkbench.Host.TcpProgramV072</StartupObject>
   </PropertyGroup>
   <ItemGroup>
     <Reference Include="System.Windows.Forms" />
@@ -24,6 +24,7 @@
   </ItemGroup>
   <ItemGroup>
     <Compile Include="HostMainV071.cs" />
+    <Compile Include="HostBootstrapV072.cs" />
   </ItemGroup>
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
 </Project>
