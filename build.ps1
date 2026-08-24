@@ -49,18 +49,30 @@ foreach ($p in @($bin, $dockDll, $themeDll)) {
 }
 
 $infoPath = Join-Path $PSScriptRoot "Info.json"
+$noticePath = Join-Path $PSScriptRoot "THIRD_PARTY_NOTICES.md"
+$dockLicensePath = Join-Path $PSScriptRoot "licenses\DockPanelSuite-MIT.txt"
+foreach ($p in @($infoPath, $noticePath, $dockLicensePath)) {
+    if (-not (Test-Path $p)) { throw "Required release file not found: $p" }
+}
+
 $info = Get-Content $infoPath -Raw | ConvertFrom-Json
 $out = Join-Path $PSScriptRoot "release\ADOFAIWorkbench"
 if (Test-Path $out) { Remove-Item $out -Recurse -Force }
 New-Item -ItemType Directory -Force -Path $out | Out-Null
+
 Copy-Item $bin $out
 Copy-Item $dockDll $out
 Copy-Item $themeDll $out
 Copy-Item $infoPath $out
+Copy-Item $noticePath $out
+$licensesOut = Join-Path $out "licenses"
+New-Item -ItemType Directory -Force -Path $licensesOut | Out-Null
+Copy-Item $dockLicensePath $licensesOut
 
 $zip = Join-Path $PSScriptRoot ("ADOFAIWorkbench-v{0}.zip" -f $info.Version)
 if (Test-Path $zip) { Remove-Item $zip -Force }
 Compress-Archive -Path (Join-Path $out "*") -DestinationPath $zip
 Write-Host "Built: $zip"
 Write-Host "Docking: DockPanel Suite 3.1.1 / VS2015 Dark theme"
+Write-Host "Third-party license notices: included"
 Write-Host "Mode: standalone WinForms tool window (ADOFAI Canvas remains untouched)."
