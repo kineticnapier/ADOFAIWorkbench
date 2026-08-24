@@ -4,7 +4,7 @@ namespace KineticNapier.ADOFAIWorkbench
 {
     public static class Main
     {
-        internal const string Version = "0.1.9";
+        internal const string Version = "0.2.0";
         private static bool enabled;
 
         public static bool Load(UnityModManager.ModEntry entry)
