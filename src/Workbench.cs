@@ -1,8 +1,9 @@
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
+using System.Globalization;
 using System.Linq;
-using System.Windows.Forms;
+using System.Text;
 
 namespace KineticNapier.ADOFAIWorkbench
 {
@@ -11,14 +12,64 @@ namespace KineticNapier.ADOFAIWorkbench
         string Id { get; }
         string Title { get; }
         bool CanClose { get; }
-        Control CreateView();
-        void OnOpened();
-        void OnClosed();
+        WorkbenchPaneView BuildView();
+        void HandleAction(string actionId, string argument);
     }
 
     public interface IDockablePaneProvider
     {
         IEnumerable<IDockablePane> CreatePanes();
+    }
+
+    public sealed class WorkbenchPaneView
+    {
+        private readonly List<string> lines = new List<string>();
+
+        public WorkbenchPaneView Text(string text, float size, bool bold)
+        {
+            lines.Add("T\t" + Encode(text) + "\t" + size.ToString(CultureInfo.InvariantCulture) + "\t" + (bold ? "1" : "0"));
+            return this;
+        }
+
+        public WorkbenchPaneView Button(string label, string actionId, string argument, bool selected)
+        {
+            lines.Add("B\t" + Encode(label) + "\t" + Encode(actionId) + "\t" + Encode(argument) + "\t" + (selected ? "1" : "0"));
+            return this;
+        }
+
+        public WorkbenchPaneView BeginRow()
+        {
+            lines.Add("R+");
+            return this;
+        }
+
+        public WorkbenchPaneView EndRow()
+        {
+            lines.Add("R-");
+            return this;
+        }
+
+        public WorkbenchPaneView Spacer(int height)
+        {
+            lines.Add("S\t" + Math.Max(0, height).ToString(CultureInfo.InvariantCulture));
+            return this;
+        }
+
+        internal string Serialize()
+        {
+            return string.Join("\n", lines.ToArray());
+        }
+
+        internal static string Encode(string value)
+        {
+            return Convert.ToBase64String(Encoding.UTF8.GetBytes(value ?? string.Empty));
+        }
+
+        internal static string Decode(string value)
+        {
+            if (string.IsNullOrEmpty(value)) return string.Empty;
+            return Encoding.UTF8.GetString(Convert.FromBase64String(value));
+        }
     }
 
     public static class Workbench
@@ -42,7 +93,7 @@ namespace KineticNapier.ADOFAIWorkbench
                 Providers.Add(provider);
                 AddProviderPanes(provider);
             }
-            WinFormsWorkbenchWindowHost.NotifyRegistryChanged();
+            ExternalWorkbenchHost.RegistryChanged();
         }
 
         public static void UnregisterPaneProvider(IDockablePaneProvider provider)
@@ -53,7 +104,7 @@ namespace KineticNapier.ADOFAIWorkbench
                 if (!Providers.Remove(provider)) return;
                 RebuildRegistryLocked();
             }
-            WinFormsWorkbenchWindowHost.NotifyRegistryChanged();
+            ExternalWorkbenchHost.RegistryChanged();
         }
 
         public static IDockablePane FindPane(string id)
@@ -69,18 +120,24 @@ namespace KineticNapier.ADOFAIWorkbench
         public static bool OpenPane(string id)
         {
             if (FindPane(id) == null) return false;
-            WinFormsWorkbenchWindowHost.OpenPane(id);
+            ExternalWorkbenchHost.OpenPane(id);
             return true;
+        }
+
+        public static void PublishPane(string id)
+        {
+            IDockablePane pane = FindPane(id);
+            if (pane != null) ExternalWorkbenchHost.PublishPane(pane);
         }
 
         public static void ShowWindow()
         {
-            WinFormsWorkbenchWindowHost.ShowWindow();
+            ExternalWorkbenchHost.ShowWindow();
         }
 
         public static void HideWindow()
         {
-            WinFormsWorkbenchWindowHost.HideWindow();
+            ExternalWorkbenchHost.HideWindow();
         }
 
         public static void RunOnUnityThread(Action action)
@@ -88,9 +145,15 @@ namespace KineticNapier.ADOFAIWorkbench
             if (action != null) UnityActions.Enqueue(action);
         }
 
-        public static void RunOnUiThread(Action action)
+        internal static void DispatchAction(string paneId, string actionId, string argument)
         {
-            WinFormsWorkbenchWindowHost.Invoke(action);
+            RunOnUnityThread(delegate
+            {
+                IDockablePane pane = FindPane(paneId);
+                if (pane == null) return;
+                try { pane.HandleAction(actionId ?? string.Empty, argument ?? string.Empty); }
+                catch (Exception ex) { Main.LogError("Pane action failed: " + paneId + "/" + actionId, ex); }
+            });
         }
 
         internal static void DrainUnityActions(int maxActions)
@@ -101,7 +164,7 @@ namespace KineticNapier.ADOFAIWorkbench
             {
                 count++;
                 try { action(); }
-                catch (Exception ex) { System.Diagnostics.Debug.WriteLine(ex); }
+                catch (Exception ex) { Main.LogError("Unity action failed", ex); }
             }
         }
 
@@ -109,12 +172,6 @@ namespace KineticNapier.ADOFAIWorkbench
         {
             lock (Gate)
                 return PanesById.Values.OrderBy(p => p.Title, StringComparer.OrdinalIgnoreCase).ToList();
-        }
-
-        internal static void RefreshAll()
-        {
-            lock (Gate) RebuildRegistryLocked();
-            WinFormsWorkbenchWindowHost.NotifyRegistryChanged();
         }
 
         private static void AddProviderPanes(IDockablePaneProvider provider)
