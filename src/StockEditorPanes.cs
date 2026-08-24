@@ -10,7 +10,6 @@ namespace KineticNapier.ADOFAIWorkbench
         {
             yield return new StockEditorPane("adofai.settings", "ADOFAI Settings", "settingsPanel");
             yield return new StockEditorPane("adofai.events", "ADOFAI Events", "levelEventsPanel");
-            yield return new StockEditorPane("adofai.bottom", "ADOFAI Bottom", "bottomPanel");
             yield return new StockEditorPane("adofai.file", "ADOFAI File", "fileActionsPanel", "fileActions");
         }
     }
@@ -57,16 +56,15 @@ namespace KineticNapier.ADOFAIWorkbench
             originalSiblingIndex = rect.GetSiblingIndex();
             originalActive = target.activeSelf;
             originalRect = RectState.Capture(rect);
+            Vector2 nativeSize = new Vector2(Mathf.Max(1f, rect.rect.width), Mathf.Max(1f, rect.rect.height));
 
             StockEditorOverride.Claim(target);
             rect.SetParent(parent, false);
-            rect.anchorMin = Vector2.zero;
-            rect.anchorMax = Vector2.one;
+            rect.anchorMin = new Vector2(0.5f, 0.5f);
+            rect.anchorMax = new Vector2(0.5f, 0.5f);
             rect.pivot = new Vector2(0.5f, 0.5f);
             rect.anchoredPosition = Vector2.zero;
-            rect.sizeDelta = Vector2.zero;
-            rect.offsetMin = Vector2.zero;
-            rect.offsetMax = Vector2.zero;
+            rect.sizeDelta = nativeSize;
             rect.localScale = Vector3.one;
             target.SetActive(true);
         }
