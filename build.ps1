@@ -33,7 +33,6 @@ $required = @(
     "Assembly-CSharp.dll",
     "RDTools.dll",
     "UnityEngine.CoreModule.dll",
-    "UnityEngine.SceneManagementModule.dll",
     "UnityEngine.UIModule.dll"
 ) | ForEach-Object { Join-Path $GameManagedDir $_ }
 $required += Join-Path $UmmDir "UnityModManager.dll"
