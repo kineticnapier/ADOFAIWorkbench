@@ -33,7 +33,25 @@ namespace KineticNapier.ADOFAIWorkbench
 
         public WorkbenchPaneView Button(string label, string actionId, string argument, bool selected)
         {
-            lines.Add("B\t" + Encode(label) + "\t" + Encode(actionId) + "\t" + Encode(argument) + "\t" + (selected ? "1" : "0"));
+            return Button(label, actionId, argument, selected, true);
+        }
+
+        public WorkbenchPaneView Button(string label, string actionId, string argument, bool selected, bool enabled)
+        {
+            lines.Add("B\t" + Encode(label) + "\t" + Encode(actionId) + "\t" + Encode(argument) + "\t"
+                + (selected ? "1" : "0") + "\t" + (enabled ? "1" : "0"));
+            return this;
+        }
+
+        public WorkbenchPaneView Input(string value, string actionId)
+        {
+            lines.Add("I\t" + Encode(value) + "\t" + Encode(actionId));
+            return this;
+        }
+
+        public WorkbenchPaneView Toggle(string label, string actionId, bool value)
+        {
+            lines.Add("C\t" + Encode(label) + "\t" + Encode(actionId) + "\t" + (value ? "1" : "0"));
             return this;
         }
 
