@@ -21,22 +21,32 @@ namespace KineticNapier.ADOFAIWorkbench.Host
                 !int.TryParse(args[2], out parentPid))
                 return;
 
-            Application.EnableVisualStyles();
-            Application.SetCompatibleTextRenderingDefault(false);
-            StartParentGuard(parentPid);
+            HostHardeningV082.InstallGlobalExceptionLogging();
 
-            using (TcpHostConnection connection = new TcpHostConnection(port, args[1]))
-            using (TcpHostForm form = new TcpHostForm(connection))
+            try
             {
-                FixChromeLayout(form);
-                InstallCloseBehavior(form);
+                Application.EnableVisualStyles();
+                Application.SetCompatibleTextRenderingDefault(false);
+                StartParentGuard(parentPid);
 
-                form.Shown += delegate
+                using (TcpHostConnection connection = new TcpHostConnection(port, args[1]))
+                using (TcpHostForm form = new TcpHostForm(connection))
                 {
-                    form.EnsureVisibleAndForeground();
-                    connection.Start(form.ReceiveMessage);
-                };
-                Application.Run(form);
+                    FixChromeLayout(form);
+                    InstallCloseBehavior(form);
+                    HostHardeningV082.InstallFormHardening(form);
+
+                    form.Shown += delegate
+                    {
+                        form.EnsureVisibleAndForeground();
+                        connection.Start(form.ReceiveMessage);
+                    };
+                    Application.Run(form);
+                }
+            }
+            catch (Exception ex)
+            {
+                HostHardeningV082.WriteCrashLog("Fatal exception in host Main", ex);
             }
         }
 
@@ -63,9 +73,8 @@ namespace KineticNapier.ADOFAIWorkbench.Host
         private static void InstallCloseBehavior(TcpHostForm form)
         {
             // TcpHostForm's own close handler intentionally prevents a user-close
-            // from terminating the host, but older builds hid the form completely.
-            // Keep it discoverable instead: X minimizes to the taskbar, while
-            // EXIT/disconnect/ADOFAI shutdown still closes the process normally.
+            // from terminating the host. Keep it discoverable: X minimizes to the
+            // taskbar, while EXIT/disconnect/ADOFAI shutdown still closes normally.
             form.FormClosing += delegate(object sender, FormClosingEventArgs e)
             {
                 if (e.CloseReason != CloseReason.UserClosing) return;
