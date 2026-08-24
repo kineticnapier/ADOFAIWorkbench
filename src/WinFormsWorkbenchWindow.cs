@@ -72,11 +72,7 @@ namespace KineticNapier.ADOFAIWorkbench
             lock (Gate)
             {
                 if (thread != null) return;
-                thread = new Thread(ThreadMain)
-                {
-                    IsBackground = true,
-                    Name = "ADOFAI Workbench UI"
-                };
+                thread = new Thread(ThreadMain) { IsBackground = true, Name = "ADOFAI Workbench UI" };
                 thread.SetApartmentState(ApartmentState.STA);
                 thread.Start();
             }
@@ -95,13 +91,10 @@ namespace KineticNapier.ADOFAIWorkbench
                 pending = Pending.ToArray();
                 Pending.Clear();
             }
-
             created.Shown += delegate
             {
                 for (int i = 0; i < pending.Length; i++)
-                {
                     try { pending[i](); } catch { }
-                }
             };
             Application.Run(created);
         }
@@ -137,10 +130,8 @@ namespace KineticNapier.ADOFAIWorkbench
             StartPosition = FormStartPosition.CenterScreen;
             BackColor = WindowBack;
             ForeColor = TextColor;
-
             FormClosing += OnFormClosing;
             ResizeEnd += delegate { SaveLayout(); };
-            Move += delegate { if (Visible && WindowState == FormWindowState.Normal) SaveLayout(); };
 
             BuildToolbar();
             BuildStatus();
@@ -157,23 +148,21 @@ namespace KineticNapier.ADOFAIWorkbench
 
         internal void RefreshRegistry()
         {
-            launcherPanel.SuspendLayout();
-            try
+            while (launcherPanel.Controls.Count > 0)
             {
-                launcherPanel.Controls.Clear();
-                IList<IDockablePane> panes = Workbench.GetPanesSnapshot();
-                for (int i = 0; i < panes.Count; i++)
-                {
-                    IDockablePane pane = panes[i];
-                    Button button = MakeButton("+ " + pane.Title);
-                    string id = pane.Id;
-                    button.Click += delegate { OpenPane(id); };
-                    launcherPanel.Controls.Add(button);
-                }
+                Control child = launcherPanel.Controls[0];
+                launcherPanel.Controls.RemoveAt(0);
+                child.Dispose();
             }
-            finally
+
+            IList<IDockablePane> panes = Workbench.GetPanesSnapshot();
+            for (int i = 0; i < panes.Count; i++)
             {
-                launcherPanel.ResumeLayout(true);
+                IDockablePane pane = panes[i];
+                Button button = MakeButton("+ " + pane.Title);
+                string id = pane.Id;
+                button.Click += delegate { OpenPane(id); };
+                launcherPanel.Controls.Add(button);
             }
 
             if (!HasAnyPaneIds())
@@ -199,8 +188,7 @@ namespace KineticNapier.ADOFAIWorkbench
         private void ClosePane(string id, bool force)
         {
             IDockablePane pane = Workbench.FindPane(id);
-            if (pane == null) return;
-            if (!force && !pane.CanClose) return;
+            if (pane == null || (!force && !pane.CanClose)) return;
             workspace.ClosePane(id);
             RebuildDockTree();
             SaveLayout();
@@ -251,33 +239,24 @@ namespace KineticNapier.ADOFAIWorkbench
             toolbar.AutoScroll = true;
             toolbar.BackColor = ChromeBack;
             toolbar.Padding = new Padding(4);
-
-            Button splitRight = MakeButton("Split Right");
-            splitRight.Click += delegate { SplitFocused(Orientation.Vertical); };
-            toolbar.Controls.Add(splitRight);
-
-            Button splitDown = MakeButton("Split Down");
-            splitDown.Click += delegate { SplitFocused(Orientation.Horizontal); };
-            toolbar.Controls.Add(splitDown);
-
-            Button closeGroup = MakeButton("Close Group");
-            closeGroup.Click += delegate { CloseFocusedGroup(); };
-            toolbar.Controls.Add(closeGroup);
-
-            Button save = MakeButton("Save Layout");
-            save.Click += delegate { SaveLayout(); SetStatus("Layout saved"); };
-            toolbar.Controls.Add(save);
-
-            Button reset = MakeButton("Reset Layout");
-            reset.Click += delegate { ResetLayout(); };
-            toolbar.Controls.Add(reset);
-
+            AddToolbarButton("Split Right", delegate { SplitFocused(Orientation.Vertical); });
+            AddToolbarButton("Split Down", delegate { SplitFocused(Orientation.Horizontal); });
+            AddToolbarButton("Close Group", CloseFocusedGroup);
+            AddToolbarButton("Save Layout", delegate { SaveLayout(); SetStatus("Layout saved"); });
+            AddToolbarButton("Reset Layout", ResetLayout);
             launcherPanel.AutoSize = true;
             launcherPanel.WrapContents = false;
             launcherPanel.BackColor = ChromeBack;
             launcherPanel.Margin = new Padding(10, 0, 0, 0);
             toolbar.Controls.Add(launcherPanel);
             Controls.Add(toolbar);
+        }
+
+        private void AddToolbarButton(string text, Action action)
+        {
+            Button button = MakeButton(text);
+            button.Click += delegate { action(); };
+            toolbar.Controls.Add(button);
         }
 
         private void BuildStatus()
@@ -307,12 +286,15 @@ namespace KineticNapier.ADOFAIWorkbench
             try
             {
                 DisposeOpenViews();
-                dockHost.SuspendLayout();
-                dockHost.Controls.Clear();
+                while (dockHost.Controls.Count > 0)
+                {
+                    Control child = dockHost.Controls[0];
+                    dockHost.Controls.RemoveAt(0);
+                    child.Dispose();
+                }
                 groupViews.Clear();
                 dragStates.Clear();
                 workspace.Normalize();
-
                 Control root = BuildNode(workspace.Root);
                 if (root != null)
                 {
@@ -323,7 +305,6 @@ namespace KineticNapier.ADOFAIWorkbench
             }
             finally
             {
-                dockHost.ResumeLayout(true);
                 rebuilding = false;
             }
         }
@@ -332,7 +313,6 @@ namespace KineticNapier.ADOFAIWorkbench
         {
             DockGroupNode group = node as DockGroupNode;
             if (group != null) return BuildGroup(group);
-
             DockSplitNode splitNode = node as DockSplitNode;
             if (splitNode == null) return new Panel { BackColor = PaneBack };
 
@@ -342,10 +322,9 @@ namespace KineticNapier.ADOFAIWorkbench
                 Orientation = splitNode.Orientation,
                 SplitterWidth = 5,
                 BackColor = ChromeBack,
-                Panel1MinSize = 80,
-                Panel2MinSize = 80
+                Panel1MinSize = 40,
+                Panel2MinSize = 40
             };
-
             Control first = BuildNode(splitNode.First);
             Control second = BuildNode(splitNode.Second);
             first.Dock = DockStyle.Fill;
@@ -354,16 +333,13 @@ namespace KineticNapier.ADOFAIWorkbench
             split.Panel2.Controls.Add(second);
 
             bool ratioApplied = false;
-            EventHandler applyRatio = null;
-            applyRatio = delegate
+            EventHandler applyRatio = delegate
             {
                 if (ratioApplied) return;
-                int available = splitNode.Orientation == Orientation.Vertical
-                    ? split.ClientSize.Width - split.SplitterWidth
-                    : split.ClientSize.Height - split.SplitterWidth;
-                if (available <= 160) return;
+                int available = splitNode.Orientation == Orientation.Vertical ? split.ClientSize.Width - split.SplitterWidth : split.ClientSize.Height - split.SplitterWidth;
+                if (available <= 100) return;
                 ratioApplied = true;
-                int distance = (int)Math.Round(available * Math.Max(0.1f, Math.Min(0.9f, splitNode.Ratio)));
+                int distance = (int)Math.Round(available * ClampRatio(splitNode.Ratio));
                 distance = Math.Max(split.Panel1MinSize, Math.Min(available - split.Panel2MinSize, distance));
                 try { split.SplitterDistance = distance; } catch { }
             };
@@ -372,14 +348,10 @@ namespace KineticNapier.ADOFAIWorkbench
             split.SplitterMoved += delegate
             {
                 if (rebuilding) return;
-                int available = splitNode.Orientation == Orientation.Vertical
-                    ? split.ClientSize.Width - split.SplitterWidth
-                    : split.ClientSize.Height - split.SplitterWidth;
-                if (available > 0)
-                {
-                    splitNode.Ratio = Math.Max(0.1f, Math.Min(0.9f, (float)split.SplitterDistance / available));
-                    SaveLayout();
-                }
+                int available = splitNode.Orientation == Orientation.Vertical ? split.ClientSize.Width - split.SplitterWidth : split.ClientSize.Height - split.SplitterWidth;
+                if (available <= 0) return;
+                splitNode.Ratio = ClampRatio((float)split.SplitterDistance / available);
+                SaveLayout();
             };
             return split;
         }
@@ -403,66 +375,44 @@ namespace KineticNapier.ADOFAIWorkbench
                 AllowDrop = true
             };
             frame.Controls.Add(tabs);
-            GroupView groupView = new GroupView(group, frame, tabs);
-            groupViews[group] = groupView;
+            GroupView view = new GroupView(group, frame, tabs);
+            groupViews[group] = view;
             dragStates[tabs] = new TabDragState();
 
             tabs.DrawItem += DrawTab;
-            tabs.MouseDown += delegate(object sender, MouseEventArgs e) { OnTabMouseDown(groupView, e); };
-            tabs.MouseMove += delegate(object sender, MouseEventArgs e) { OnTabMouseMove(groupView, e); };
+            tabs.MouseDown += delegate(object sender, MouseEventArgs e) { OnTabMouseDown(view, e); };
+            tabs.MouseMove += delegate(object sender, MouseEventArgs e) { OnTabMouseMove(view, e); };
             tabs.MouseUp += delegate { dragStates[tabs].Reset(); };
-            tabs.SelectedIndexChanged += delegate { OnTabSelected(groupView); };
+            tabs.SelectedIndexChanged += delegate { OnTabSelected(view); };
             tabs.DragEnter += delegate(object sender, DragEventArgs e) { OnTabDragEnter(e); };
             tabs.DragOver += delegate(object sender, DragEventArgs e) { OnTabDragEnter(e); };
-            tabs.DragDrop += delegate(object sender, DragEventArgs e) { OnTabDragDrop(groupView, e); };
+            tabs.DragDrop += delegate(object sender, DragEventArgs e) { OnTabDragDrop(view, e); };
             tabs.MouseClick += delegate(object sender, MouseEventArgs e)
             {
-                if (e.Button == MouseButtons.Right) ShowTabContextMenu(groupView, e.Location);
-                else FocusGroup(group);
+                FocusGroup(group);
+                if (e.Button == MouseButtons.Right) ShowTabContextMenu(view, e.Location);
             };
-            frame.MouseDown += delegate { FocusGroup(group); };
 
-            bool anyVisible = false;
             for (int i = 0; i < group.PaneIds.Count; i++)
             {
                 string id = group.PaneIds[i];
                 IDockablePane pane = Workbench.FindPane(id);
                 if (pane == null) continue;
-                anyVisible = true;
-                TabPage page = CreatePanePage(pane, tabs);
+                TabPage page = CreatePanePage(pane);
                 tabs.TabPages.Add(page);
                 openPanes[id] = new OpenPaneState(pane, page, group);
                 if (string.Equals(id, group.ActivePaneId, StringComparison.Ordinal)) tabs.SelectedTab = page;
             }
-
-            if (!anyVisible)
-            {
-                Label empty = new Label
-                {
-                    Text = "Drop a pane here",
-                    Dock = DockStyle.Fill,
-                    TextAlign = ContentAlignment.MiddleCenter,
-                    ForeColor = Color.FromArgb(130, 136, 150),
-                    BackColor = PaneBack,
-                    Font = new Font(SystemFonts.MessageBoxFont.FontFamily, 12f, FontStyle.Regular)
-                };
-                empty.AllowDrop = true;
-                empty.DragEnter += delegate(object sender, DragEventArgs e) { OnTabDragEnter(e); };
-                empty.DragDrop += delegate(object sender, DragEventArgs e) { OnEmptyGroupDrop(groupView, e); };
-                tabs.Controls.Add(empty);
-                groupView.EmptyOverlay = empty;
-            }
-
             return frame;
         }
 
-        private TabPage CreatePanePage(IDockablePane pane, TabControl owner)
+        private TabPage CreatePanePage(IDockablePane pane)
         {
-            Control view;
-            try { view = pane.CreateView(); }
+            Control content;
+            try { content = pane.CreateView(); }
             catch (Exception ex)
             {
-                view = new TextBox
+                content = new TextBox
                 {
                     Multiline = true,
                     ReadOnly = true,
@@ -473,16 +423,9 @@ namespace KineticNapier.ADOFAIWorkbench
                     Text = "Pane failed to create:" + Environment.NewLine + ex
                 };
             }
-
-            view.Dock = DockStyle.Fill;
-            TabPage page = new TabPage(pane.Title)
-            {
-                BackColor = PaneBack,
-                ForeColor = TextColor,
-                Tag = pane.Id,
-                Padding = new Padding(0)
-            };
-            page.Controls.Add(view);
+            content.Dock = DockStyle.Fill;
+            TabPage page = new TabPage(pane.Title) { BackColor = PaneBack, ForeColor = TextColor, Tag = pane.Id, Padding = new Padding(0) };
+            page.Controls.Add(content);
             try { pane.OnOpened(); } catch { }
             return page;
         }
@@ -511,8 +454,7 @@ namespace KineticNapier.ADOFAIWorkbench
             FocusGroup(view.Group);
             int index = HitTab(view.Tabs, e.Location);
             if (index < 0) return;
-            TabPage page = view.Tabs.TabPages[index];
-            string id = page.Tag as string;
+            string id = view.Tabs.TabPages[index].Tag as string;
             IDockablePane pane = Workbench.FindPane(id);
             Rectangle rect = view.Tabs.GetTabRect(index);
             if (e.Button == MouseButtons.Left && pane != null && pane.CanClose && e.X >= rect.Right - 24)
@@ -534,8 +476,8 @@ namespace KineticNapier.ADOFAIWorkbench
             if ((e.Button & MouseButtons.Left) == 0) return;
             TabDragState state = dragStates[view.Tabs];
             if (state.Started || string.IsNullOrEmpty(state.PaneId)) return;
-            Size drag = SystemInformation.DragSize;
-            Rectangle box = new Rectangle(state.Start.X - drag.Width / 2, state.Start.Y - drag.Height / 2, drag.Width, drag.Height);
+            Size size = SystemInformation.DragSize;
+            Rectangle box = new Rectangle(state.Start.X - size.Width / 2, state.Start.Y - size.Height / 2, size.Width, size.Height);
             if (box.Contains(e.Location)) return;
             state.Started = true;
             DataObject data = new DataObject();
@@ -544,7 +486,7 @@ namespace KineticNapier.ADOFAIWorkbench
             finally { state.Reset(); }
         }
 
-        private void OnTabDragEnter(DragEventArgs e)
+        private static void OnTabDragEnter(DragEventArgs e)
         {
             e.Effect = e.Data != null && e.Data.GetDataPresent(PaneDragFormat) ? DragDropEffects.Move : DragDropEffects.None;
         }
@@ -556,8 +498,8 @@ namespace KineticNapier.ADOFAIWorkbench
             if (string.IsNullOrEmpty(id)) return;
             Point point = target.Tabs.PointToClient(new Point(e.X, e.Y));
             DockGroupNode source = workspace.FindPaneGroup(id);
-
             DockEdge edge = HitDockEdge(target.Tabs, point);
+
             if (edge != DockEdge.Center && !(ReferenceEquals(source, target.Group) && source != null && source.PaneIds.Count <= 1))
             {
                 Orientation orientation = edge == DockEdge.Left || edge == DockEdge.Right ? Orientation.Vertical : Orientation.Horizontal;
@@ -568,21 +510,9 @@ namespace KineticNapier.ADOFAIWorkbench
             }
             else
             {
-                int insert = FindInsertionIndex(target.Tabs, point);
-                workspace.MovePane(id, target.Group, insert);
+                workspace.MovePane(id, target.Group, FindInsertionIndex(target.Tabs, point));
                 SetStatus("Moved " + id + " as tab");
             }
-
-            RebuildDockTree();
-            SaveLayout();
-        }
-
-        private void OnEmptyGroupDrop(GroupView target, DragEventArgs e)
-        {
-            if (e.Data == null || !e.Data.GetDataPresent(PaneDragFormat)) return;
-            string id = e.Data.GetData(PaneDragFormat) as string;
-            if (string.IsNullOrEmpty(id)) return;
-            workspace.MovePane(id, target.Group, 0);
             RebuildDockTree();
             SaveLayout();
         }
@@ -596,31 +526,29 @@ namespace KineticNapier.ADOFAIWorkbench
             if (pane == null) return;
 
             ContextMenuStrip menu = new ContextMenuStrip();
-            ToolStripItem splitRight = menu.Items.Add("Move to New Split Right");
-            splitRight.Click += delegate
-            {
-                if (ReferenceEquals(workspace.FindPaneGroup(id), view.Group) && view.Group.PaneIds.Count <= 1) return;
-                DockGroupNode group = workspace.SplitGroup(view.Group, Orientation.Vertical, true);
-                workspace.MovePane(id, group, 0);
-                RebuildDockTree();
-                SaveLayout();
-            };
-            ToolStripItem splitDown = menu.Items.Add("Move to New Split Down");
-            splitDown.Click += delegate
-            {
-                if (ReferenceEquals(workspace.FindPaneGroup(id), view.Group) && view.Group.PaneIds.Count <= 1) return;
-                DockGroupNode group = workspace.SplitGroup(view.Group, Orientation.Horizontal, true);
-                workspace.MovePane(id, group, 0);
-                RebuildDockTree();
-                SaveLayout();
-            };
+            AddMoveSplitMenu(menu, "Move to New Split Right", id, view.Group, Orientation.Vertical);
+            AddMoveSplitMenu(menu, "Move to New Split Down", id, view.Group, Orientation.Horizontal);
             if (pane.CanClose)
             {
                 menu.Items.Add(new ToolStripSeparator());
                 ToolStripItem close = menu.Items.Add("Close");
                 close.Click += delegate { ClosePane(id, false); };
             }
+            menu.Closed += delegate { menu.Dispose(); };
             menu.Show(view.Tabs, point);
+        }
+
+        private void AddMoveSplitMenu(ContextMenuStrip menu, string text, string id, DockGroupNode sourceGroup, Orientation orientation)
+        {
+            ToolStripItem item = menu.Items.Add(text);
+            item.Click += delegate
+            {
+                if (ReferenceEquals(workspace.FindPaneGroup(id), sourceGroup) && sourceGroup.PaneIds.Count <= 1) return;
+                DockGroupNode created = workspace.SplitGroup(sourceGroup, orientation, true);
+                workspace.MovePane(id, created, 0);
+                RebuildDockTree();
+                SaveLayout();
+            };
         }
 
         private void DrawTab(object sender, DrawItemEventArgs e)
@@ -628,8 +556,7 @@ namespace KineticNapier.ADOFAIWorkbench
             TabControl tabs = (TabControl)sender;
             if (e.Index < 0 || e.Index >= tabs.TabCount) return;
             TabPage page = tabs.TabPages[e.Index];
-            string id = page.Tag as string;
-            IDockablePane pane = Workbench.FindPane(id);
+            IDockablePane pane = Workbench.FindPane(page.Tag as string);
             Rectangle rect = e.Bounds;
             using (Brush background = new SolidBrush(e.Index == tabs.SelectedIndex ? Color.FromArgb(55, 63, 78) : ChromeBack))
                 e.Graphics.FillRectangle(background, rect);
@@ -653,8 +580,7 @@ namespace KineticNapier.ADOFAIWorkbench
 
         private static int HitTab(TabControl tabs, Point point)
         {
-            for (int i = 0; i < tabs.TabCount; i++)
-                if (tabs.GetTabRect(i).Contains(point)) return i;
+            for (int i = 0; i < tabs.TabCount; i++) if (tabs.GetTabRect(i).Contains(point)) return i;
             return -1;
         }
 
@@ -682,8 +608,7 @@ namespace KineticNapier.ADOFAIWorkbench
 
         private bool HasAnyPaneIds()
         {
-            foreach (DockGroupNode group in workspace.Groups)
-                if (group.PaneIds.Count > 0) return true;
+            foreach (DockGroupNode group in workspace.Groups) if (group.PaneIds.Count > 0) return true;
             return false;
         }
 
@@ -691,7 +616,6 @@ namespace KineticNapier.ADOFAIWorkbench
         {
             DockLayoutDocument document = DockLayoutStore.Load();
             if (document == null || document.Root == null) return;
-
             DockNode restored = DockLayoutStore.FromDto(document.Root, null);
             if (restored != null)
             {
@@ -705,8 +629,7 @@ namespace KineticNapier.ADOFAIWorkbench
                 Rectangle wanted = new Rectangle(document.X, document.Y, document.Width, document.Height);
                 bool visible = false;
                 Screen[] screens = Screen.AllScreens;
-                for (int i = 0; i < screens.Length; i++)
-                    if (screens[i].WorkingArea.IntersectsWith(wanted)) { visible = true; break; }
+                for (int i = 0; i < screens.Length; i++) if (screens[i].WorkingArea.IntersectsWith(wanted)) { visible = true; break; }
                 if (visible)
                 {
                     StartPosition = FormStartPosition.Manual;
@@ -720,7 +643,7 @@ namespace KineticNapier.ADOFAIWorkbench
         {
             if (rebuilding) return;
             Rectangle bounds = WindowState == FormWindowState.Normal ? Bounds : RestoreBounds;
-            DockLayoutDocument document = new DockLayoutDocument
+            DockLayoutStore.Save(new DockLayoutDocument
             {
                 X = bounds.X,
                 Y = bounds.Y,
@@ -729,8 +652,12 @@ namespace KineticNapier.ADOFAIWorkbench
                 Maximized = WindowState == FormWindowState.Maximized,
                 FocusedGroupId = workspace.FocusedGroup != null ? workspace.FocusedGroup.Id : null,
                 Root = DockLayoutStore.ToDto(workspace.Root)
-            };
-            DockLayoutStore.Save(document);
+            });
+        }
+
+        private static float ClampRatio(float value)
+        {
+            return Math.Max(0.1f, Math.Min(0.9f, value));
         }
 
         private static Button MakeButton(string text)
@@ -748,10 +675,7 @@ namespace KineticNapier.ADOFAIWorkbench
             };
         }
 
-        private void SetStatus(string text)
-        {
-            status.Text = text ?? "";
-        }
+        private void SetStatus(string text) { status.Text = text ?? ""; }
 
         private void OnFormClosing(object sender, FormClosingEventArgs e)
         {
@@ -760,28 +684,14 @@ namespace KineticNapier.ADOFAIWorkbench
             Hide();
         }
 
-        private enum DockEdge
-        {
-            Center,
-            Left,
-            Right,
-            Top,
-            Bottom
-        }
+        private enum DockEdge { Center, Left, Right, Top, Bottom }
 
         private sealed class GroupView
         {
             internal readonly DockGroupNode Group;
             internal readonly Panel Frame;
             internal readonly TabControl Tabs;
-            internal Label EmptyOverlay;
-
-            internal GroupView(DockGroupNode group, Panel frame, TabControl tabs)
-            {
-                Group = group;
-                Frame = frame;
-                Tabs = tabs;
-            }
+            internal GroupView(DockGroupNode group, Panel frame, TabControl tabs) { Group = group; Frame = frame; Tabs = tabs; }
         }
 
         private sealed class TabDragState
@@ -789,13 +699,7 @@ namespace KineticNapier.ADOFAIWorkbench
             internal string PaneId;
             internal Point Start;
             internal bool Started;
-
-            internal void Reset()
-            {
-                PaneId = null;
-                Start = Point.Empty;
-                Started = false;
-            }
+            internal void Reset() { PaneId = null; Start = Point.Empty; Started = false; }
         }
 
         private sealed class OpenPaneState
@@ -803,13 +707,7 @@ namespace KineticNapier.ADOFAIWorkbench
             internal readonly IDockablePane Pane;
             internal readonly TabPage Page;
             internal readonly DockGroupNode Group;
-
-            internal OpenPaneState(IDockablePane pane, TabPage page, DockGroupNode group)
-            {
-                Pane = pane;
-                Page = page;
-                Group = group;
-            }
+            internal OpenPaneState(IDockablePane pane, TabPage page, DockGroupNode group) { Pane = pane; Page = page; Group = group; }
         }
     }
 }
