@@ -1,24 +1,71 @@
 # ADOFAIWorkbench
 
-A dockable IDE-style workspace shell for the A Dance of Fire and Ice level editor.
+A standalone IDE-style tool window for A Dance of Fire and Ice mods.
 
-ADOFAIWorkbench keeps the stock `scnEditor` / `LevelData` / chart world as the backend while allowing editor tools to provide arbitrary dockable panes. A chart editor, inspector, timeline, console, browser-like view, or another mod can all participate in the same split/tab workspace.
+ADOFAIWorkbench deliberately leaves the stock ADOFAI editor UI and rendering untouched. The Workbench runs in its own WinForms window and hosts arbitrary tool panes registered by consumer mods.
+
+## Features
+
+- Recursive horizontal / vertical split tree.
+- Tabbed panes in every dock group.
+- Drag tabs between groups.
+- Drop a tab near the left / right / top / bottom edge of a group to create a new split there.
+- Close and reopen panes.
+- Close groups by merging their panes into the neighboring group.
+- Persist window bounds, split ratios, pane placement, tab order, active tabs and focused group.
+- Layout is stored at `%AppData%\ADOFAIWorkbench\layout.xml`.
+- Consumer actions can be queued safely back to Unity's main thread.
 
 ## Architecture
 
-- **AdofaiEditorToolkit**: low-level ADOFAI/editor bridge and native UI host.
-- **ADOFAIWorkbench**: tabs, splits, docking model, pane registry, focus and workspace shell.
-- **Consumer mods** (for example ADOFAIMultiTileEditor): register their own `IDockablePaneProvider` implementations.
+```text
+ADOFAI / Unity main thread
+        ^
+        | Workbench.RunOnUnityThread(...)
+        | command queue
+        v
+ADOFAI Workbench UI thread
+        |
+        +-- recursive split tree
+        +-- tab groups
+        +-- consumer panes
+```
 
-Only one stock `scnEditor` is assumed. A pane may use the live editor backend, a snapshot, or a completely unrelated UI.
+Workbench does not reparent stock ADOFAI controls, crop the game camera, or replace the level editor Canvas.
 
-## Initial API
+## API
+
+```csharp
+public interface IDockablePane
+{
+    string Id { get; }
+    string Title { get; }
+    bool CanClose { get; }
+    System.Windows.Forms.Control CreateView();
+    void OnOpened();
+    void OnClosed();
+}
+
+public interface IDockablePaneProvider
+{
+    IEnumerable<IDockablePane> CreatePanes();
+}
+```
+
+Register and open panes with:
 
 ```csharp
 Workbench.RegisterPaneProvider(provider);
 Workbench.OpenPane("my-pane-id");
 ```
 
-Providers expose `IDockablePane` objects. Each pane receives a `RectTransform` when mounted and owns the UI below that transform.
+From a Workbench pane, enqueue any ADOFAI / Unity operation instead of calling Unity APIs from the UI thread:
 
-The first implementation focuses on a reusable native Unity-uGUI shell and a recursive split tree. Drag/drop docking indicators and persisted layouts are intentionally left for the next iteration.
+```csharp
+Workbench.RunOnUnityThread(() =>
+{
+    // Unity / scnEditor work here.
+});
+```
+
+Use `Workbench.RunOnUiThread(...)` to publish snapshots or other UI updates back to the Workbench window.
