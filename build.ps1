@@ -50,4 +50,4 @@ $zip = Join-Path $PSScriptRoot ("ADOFAIWorkbench-v{0}.zip" -f $info.Version)
 if (Test-Path $zip) { Remove-Item $zip -Force }
 Compress-Archive -Path (Join-Path $out "*") -DestinationPath $zip
 Write-Host "Built: $zip"
-Write-Host "Mode: standalone WPF tool window (no Unity Canvas or EditorToolkit dependency)."
+Write-Host "Mode: standalone WinForms tool window (no Unity Canvas or EditorToolkit dependency)."
