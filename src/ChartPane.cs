@@ -61,7 +61,7 @@ namespace KineticNapier.ADOFAIWorkbench
             layout.NativeBottomHeight = NativeBottomHeight;
             layout.MinimumSideWidth = MinimumSideWidth;
             layout.MinimumWorldWidth = MinimumWorldWidth;
-            layout.ApplyNow();
+            layout.ApplyNow(true);
 
             scnEditor editor = ADOBase.editor;
             if (editor != null)
@@ -139,8 +139,6 @@ namespace KineticNapier.ADOFAIWorkbench
                 originalSiblingIndex = rect.GetSiblingIndex();
                 originalRect = StockEditorPane.RectState.Capture(rect);
 
-                // Apply() runs before the Workbench shell. Claiming restores any stock
-                // children it hid earlier in the same frame (event tabs/panels, etc.).
                 StockEditorOverride.Claim(target);
                 originalActive = target.activeSelf;
 
@@ -158,7 +156,7 @@ namespace KineticNapier.ADOFAIWorkbench
                 {
                     fitter.Target = rect;
                     fitter.NativeSize = nativeSize;
-                    fitter.ApplyNow();
+                    fitter.ApplyNow(true);
                 }
             }
 
@@ -197,45 +195,50 @@ namespace KineticNapier.ADOFAIWorkbench
         internal float MinimumSideWidth;
         internal float MinimumWorldWidth;
 
+        private float lastWidth = -1f;
+        private float lastHeight = -1f;
+
         private void LateUpdate()
         {
-            ApplyNow();
+            ApplyNow(false);
         }
 
-        internal void ApplyNow()
+        internal void ApplyNow(bool force)
         {
             if (Root == null || LeftHost == null || RightHost == null || BottomHost == null || Viewport == null)
                 return;
 
             float width = Mathf.Max(1f, Root.rect.width);
             float height = Mathf.Max(1f, Root.rect.height);
+            if (!force && Mathf.Abs(width - lastWidth) < 0.01f && Mathf.Abs(height - lastHeight) < 0.01f)
+                return;
+
+            lastWidth = width;
+            lastHeight = height;
+
             float bottomHeight = Mathf.Min(NativeBottomHeight, Mathf.Max(52f, height * 0.22f));
             float sideWidth = Mathf.Min(
                 NativeSideWidth,
                 Mathf.Max(MinimumSideWidth, (width - MinimumWorldWidth) * 0.5f));
 
-            // Left stock inspector.
             LeftHost.anchorMin = new Vector2(0f, 0f);
             LeftHost.anchorMax = new Vector2(0f, 1f);
             LeftHost.pivot = new Vector2(0f, 0.5f);
             LeftHost.anchoredPosition = new Vector2(0f, bottomHeight * 0.5f);
             LeftHost.sizeDelta = new Vector2(sideWidth, -bottomHeight);
 
-            // Right stock event inspector.
             RightHost.anchorMin = new Vector2(1f, 0f);
             RightHost.anchorMax = new Vector2(1f, 1f);
             RightHost.pivot = new Vector2(1f, 0.5f);
             RightHost.anchoredPosition = new Vector2(0f, bottomHeight * 0.5f);
             RightHost.sizeDelta = new Vector2(sideWidth, -bottomHeight);
 
-            // Stock bottom toolbar remains one horizontal strip across the whole chart.
             BottomHost.anchorMin = new Vector2(0f, 0f);
             BottomHost.anchorMax = new Vector2(1f, 0f);
             BottomHost.pivot = new Vector2(0.5f, 0f);
             BottomHost.anchoredPosition = Vector2.zero;
             BottomHost.sizeDelta = new Vector2(0f, bottomHeight);
 
-            // Only this center region belongs to the actual chart camera.
             Viewport.anchorMin = Vector2.zero;
             Viewport.anchorMax = Vector2.one;
             Viewport.pivot = new Vector2(0.5f, 0.5f);
@@ -251,24 +254,38 @@ namespace KineticNapier.ADOFAIWorkbench
         internal RectTransform Target;
         internal Vector2 NativeSize;
 
+        private float lastWidth = -1f;
+        private float lastHeight = -1f;
+        private float lastNativeWidth = -1f;
+        private float lastNativeHeight = -1f;
+
         private void LateUpdate()
         {
-            ApplyNow();
+            ApplyNow(false);
         }
 
-        internal void ApplyNow()
+        internal void ApplyNow(bool force)
         {
             RectTransform host = transform as RectTransform;
             if (host == null || Target == null || NativeSize.x <= 0f || NativeSize.y <= 0f) return;
 
-            float scale = Mathf.Min(
-                host.rect.width / NativeSize.x,
-                host.rect.height / NativeSize.y);
+            float width = host.rect.width;
+            float height = host.rect.height;
+            if (!force
+                && Mathf.Abs(width - lastWidth) < 0.01f
+                && Mathf.Abs(height - lastHeight) < 0.01f
+                && Mathf.Abs(NativeSize.x - lastNativeWidth) < 0.01f
+                && Mathf.Abs(NativeSize.y - lastNativeHeight) < 0.01f)
+                return;
+
+            lastWidth = width;
+            lastHeight = height;
+            lastNativeWidth = NativeSize.x;
+            lastNativeHeight = NativeSize.y;
+
+            float scale = Mathf.Min(width / NativeSize.x, height / NativeSize.y);
             scale = Mathf.Clamp(scale, 0.05f, 1f);
 
-            // Preserve every native anchor/child coordinate inside the stock panel.
-            // Only the whole subtree is scaled, so ScrollRects and event/settings tabs
-            // continue to use the dimensions ADOFAI expects.
             Target.anchorMin = new Vector2(0.5f, 0.5f);
             Target.anchorMax = new Vector2(0.5f, 0.5f);
             Target.pivot = new Vector2(0.5f, 0.5f);
@@ -294,7 +311,15 @@ namespace KineticNapier.ADOFAIWorkbench
 
     internal static class ChartCameraViewport
     {
+        private const int CameraRetryFrames = 120;
+
+        private static readonly List<Camera> chartCameras = new List<Camera>(2);
         private static readonly Dictionary<Camera, Rect> originalRects = new Dictionary<Camera, Rect>();
+        private static readonly Vector3[] rootCorners = new Vector3[4];
+        private static readonly Vector3[] targetCorners = new Vector3[4];
+        private static Rect lastAppliedRect;
+        private static bool hasLastAppliedRect;
+        private static int nextCameraDiscoveryFrame;
 
         internal static void Apply(RectTransform target)
         {
@@ -302,33 +327,82 @@ namespace KineticNapier.ADOFAIWorkbench
             RectTransform canvasRoot = ADOFAIEditorUiHost.Root;
             if (canvasRoot == null) return;
 
+            EnsureCameras();
+            if (chartCameras.Count == 0) return;
+
             Rect normalized = ToNormalizedRect(canvasRoot, target);
             normalized.x = Mathf.Clamp01(normalized.x);
             normalized.y = Mathf.Clamp01(normalized.y);
             normalized.width = Mathf.Clamp(normalized.width, 0.01f, 1f - normalized.x);
             normalized.height = Mathf.Clamp(normalized.height, 0.01f, 1f - normalized.y);
 
-            Camera[] cameras = Resources.FindObjectsOfTypeAll<Camera>();
-            for (int i = 0; i < cameras.Length; i++)
+            if (hasLastAppliedRect && NearlyEqual(lastAppliedRect, normalized)) return;
+
+            for (int i = 0; i < chartCameras.Count; i++)
             {
-                Camera camera = cameras[i];
-                if (!IsChartCamera(camera)) continue;
+                Camera camera = chartCameras[i];
+                if (camera == null) continue;
                 if (!originalRects.ContainsKey(camera)) originalRects.Add(camera, camera.rect);
                 camera.rect = normalized;
             }
+
+            lastAppliedRect = normalized;
+            hasLastAppliedRect = true;
         }
 
         internal static void Restore()
         {
             foreach (KeyValuePair<Camera, Rect> pair in originalRects)
                 if (pair.Key != null) pair.Key.rect = pair.Value;
+
             originalRects.Clear();
+            chartCameras.Clear();
+            hasLastAppliedRect = false;
+            nextCameraDiscoveryFrame = 0;
+        }
+
+        private static void EnsureCameras()
+        {
+            for (int i = chartCameras.Count - 1; i >= 0; i--)
+                if (chartCameras[i] == null) chartCameras.RemoveAt(i);
+            if (chartCameras.Count > 0) return;
+            if (Time.frameCount < nextCameraDiscoveryFrame) return;
+
+            nextCameraDiscoveryFrame = Time.frameCount + CameraRetryFrames;
+
+            GameObject camParent = GameObject.Find("CamParent");
+            if (camParent != null)
+            {
+                Transform mainTransform = camParent.transform.Find("Camera");
+                if (mainTransform != null)
+                {
+                    Camera main = mainTransform.GetComponent<Camera>();
+                    AddCamera(main);
+
+                    Transform overlayTransform = mainTransform.Find("OverlayCam");
+                    if (overlayTransform != null) AddCamera(overlayTransform.GetComponent<Camera>());
+                }
+            }
+
+            if (chartCameras.Count > 0) return;
+
+            // Fallback only when the known hierarchy could not be found. This used to
+            // run every frame and was the largest Workbench performance regression.
+            Camera[] cameras = Resources.FindObjectsOfTypeAll<Camera>();
+            for (int i = 0; i < cameras.Length; i++)
+            {
+                Camera camera = cameras[i];
+                if (IsChartCamera(camera)) AddCamera(camera);
+            }
+        }
+
+        private static void AddCamera(Camera camera)
+        {
+            if (camera != null && !chartCameras.Contains(camera)) chartCameras.Add(camera);
         }
 
         private static Rect ToNormalizedRect(RectTransform root, RectTransform target)
         {
-            var rootCorners = new Vector3[4];
-            var targetCorners = new Vector3[4];
             root.GetWorldCorners(rootCorners);
             target.GetWorldCorners(targetCorners);
 
@@ -342,6 +416,15 @@ namespace KineticNapier.ADOFAIWorkbench
                 (targetCorners[0].y - rootCorners[0].y) / rootHeight,
                 (targetCorners[2].x - targetCorners[0].x) / rootWidth,
                 (targetCorners[2].y - targetCorners[0].y) / rootHeight);
+        }
+
+        private static bool NearlyEqual(Rect a, Rect b)
+        {
+            const float epsilon = 0.0001f;
+            return Mathf.Abs(a.x - b.x) < epsilon
+                && Mathf.Abs(a.y - b.y) < epsilon
+                && Mathf.Abs(a.width - b.width) < epsilon
+                && Mathf.Abs(a.height - b.height) < epsilon;
         }
 
         private static bool IsChartCamera(Camera camera)
