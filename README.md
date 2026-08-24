@@ -2,7 +2,7 @@
 
 A standalone IDE-style tool window for A Dance of Fire and Ice mods.
 
-ADOFAIWorkbench deliberately leaves the stock ADOFAI editor UI and rendering untouched. The Workbench runs in its own WinForms window and hosts arbitrary tool panes registered by consumer mods.
+ADOFAIWorkbench deliberately leaves the stock ADOFAI editor UI and rendering untouched. Since ADOFAI runs on Unity/Mono, the docking UI is hosted in a separate .NET Framework 4.8 process and communicates with the mod through a named pipe.
 
 ## Features
 
@@ -13,27 +13,38 @@ ADOFAIWorkbench deliberately leaves the stock ADOFAI editor UI and rendering unt
 - Persist DockPanel layout with `SaveAsXml` / `LoadFromXml`.
 - Layout is stored at `%AppData%\ADOFAIWorkbench\layout.xml`.
 - Window bounds are stored separately at `%AppData%\ADOFAIWorkbench\window.txt`.
-- Consumer actions can be queued safely back to Unity's main thread.
-- DockPanel dependencies are resolved explicitly from the Workbench mod directory so UnityModManager load context does not have to guess their location.
+- Pane actions are dispatched back to Unity's main thread.
+- ADOFAI's Canvas, camera and stock editor controls are never reparented or cropped.
 
 ## Architecture
 
 ```text
-ADOFAI / Unity main thread
-        ^
-        | Workbench.RunOnUnityThread(...)
-        | command queue
-        v
-ADOFAI Workbench UI thread (STA)
-        |
-        +-- DockPanel Suite
-        +-- docked / floating panes
-        +-- consumer WinForms controls
+ADOFAI / Unity / Mono process
++-------------------------------+
+| ADOFAIWorkbench.dll           |
+| - pane registry               |
+| - snapshots / view protocol   |
+| - Unity main-thread queue     |
++---------------+---------------+
+                |
+                | named pipe
+                | pane views / actions
+                v
+ADOFAIWorkbench.Host.exe
+.NET Framework 4.8 process
++-------------------------------+
+| DockPanel Suite               |
+| - tabs                        |
+| - drag docking                |
+| - nested splits               |
+| - floating windows            |
+| - layout persistence          |
++-------------------------------+
 ```
 
-Workbench does not reparent stock ADOFAI controls, crop the game camera, or replace the level editor Canvas.
+DockPanel Suite is intentionally not loaded inside Unity's Mono process. Upstream disables end-user docking when running on Mono, so the external host is part of the design rather than just an isolation convenience.
 
-## API
+## Pane API
 
 ```csharp
 public interface IDockablePane
@@ -41,9 +52,8 @@ public interface IDockablePane
     string Id { get; }
     string Title { get; }
     bool CanClose { get; }
-    System.Windows.Forms.Control CreateView();
-    void OnOpened();
-    void OnClosed();
+    WorkbenchPaneView BuildView();
+    void HandleAction(string actionId, string argument);
 }
 
 public interface IDockablePaneProvider
@@ -52,23 +62,48 @@ public interface IDockablePaneProvider
 }
 ```
 
-Register and open panes with:
+`WorkbenchPaneView` is a small process-safe UI description. Current primitives are text, buttons, rows and spacers.
+
+```csharp
+public WorkbenchPaneView BuildView()
+{
+    return new WorkbenchPaneView()
+        .Text("My Tool", 16f, true)
+        .BeginRow()
+        .Button("Run", "run", "", false)
+        .Button("Reset", "reset", "", false)
+        .EndRow();
+}
+
+public void HandleAction(string actionId, string argument)
+{
+    // Called on Unity's main thread.
+}
+```
+
+Register, update and open panes with:
 
 ```csharp
 Workbench.RegisterPaneProvider(provider);
+Workbench.PublishPane("my-pane-id");
 Workbench.OpenPane("my-pane-id");
 ```
 
-From a Workbench pane, enqueue any ADOFAI / Unity operation instead of calling Unity APIs from the UI thread:
+## Build output
 
-```csharp
-Workbench.RunOnUnityThread(() =>
-{
-    // Unity / scnEditor work here.
-});
+The Workbench release contains:
+
+```text
+ADOFAIWorkbench.dll
+ADOFAIWorkbench.Host.exe
+WeifenLuo.WinFormsUI.Docking.dll
+WeifenLuo.WinFormsUI.Docking.ThemeVS2015.dll
+Info.json
+THIRD_PARTY_NOTICES.md
+licenses/DockPanelSuite-MIT.txt
 ```
 
-Use `Workbench.RunOnUiThread(...)` to publish snapshots or other UI updates back to the Workbench window.
+`ADOFAIWorkbench.dll` is loaded by UnityModManager. `ADOFAIWorkbench.Host.exe` is launched by the mod and runs under the normal Windows .NET Framework runtime.
 
 ## Third-party software
 
