@@ -7,7 +7,7 @@ namespace KineticNapier.ADOFAIWorkbench
 {
     public static class Main
     {
-        internal const string Version = "0.6.3";
+        internal const string Version = "0.6.4";
         private static bool enabled;
         private static UnityModManager.ModEntry modEntry;
 
@@ -19,6 +19,7 @@ namespace KineticNapier.ADOFAIWorkbench
             ModDirectory = ResolveModDirectory(entry);
             entry.OnToggle = OnToggle;
             entry.OnUpdate = OnUpdate;
+            entry.OnUnload = OnUnload;
 
             try
             {
@@ -46,6 +47,23 @@ namespace KineticNapier.ADOFAIWorkbench
             {
                 LogError("ADOFAI Workbench toggle failed", ex);
                 return false;
+            }
+        }
+
+        private static bool OnUnload(UnityModManager.ModEntry entry)
+        {
+            enabled = false;
+            try
+            {
+                // This only signals the IPC worker. No pipe or process operation is
+                // performed on Unity's shutdown thread.
+                ExternalWorkbenchHost.Shutdown();
+                return true;
+            }
+            catch (Exception ex)
+            {
+                LogError("ADOFAI Workbench unload failed", ex);
+                return true;
             }
         }
 
