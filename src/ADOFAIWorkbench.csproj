@@ -22,9 +22,12 @@
     <Reference Include="System.Core" />
   </ItemGroup>
   <ItemGroup>
+    <PackageReference Include="DockPanelSuite" Version="3.1.1" />
+    <PackageReference Include="DockPanelSuite.ThemeVS2015" Version="3.1.1" />
+  </ItemGroup>
+  <ItemGroup>
     <Compile Include="Main.cs" />
     <Compile Include="Workbench.cs" />
-    <Compile Include="DockLayout.cs" />
     <Compile Include="WinFormsWorkbenchWindow.cs" />
     <Compile Include="WelcomePane.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
