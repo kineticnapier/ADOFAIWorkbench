@@ -5,7 +5,7 @@ namespace KineticNapier.ADOFAIWorkbench
 {
     public static class Main
     {
-        internal const string Version = "0.2.1";
+        internal const string Version = "0.2.2";
         private static bool enabled;
         private static bool suspendedForGameplay;
 
@@ -52,15 +52,11 @@ namespace KineticNapier.ADOFAIWorkbench
             {
                 if (!suspendedForGameplay)
                 {
-                    // Editor playtest uses the same camera stack. Never leave the chart
-                    // viewport crop or Workbench chrome active while the level is playing.
                     NativeWorkbenchShell.SetVisible(false);
                     ChartCameraViewport.Restore();
                     suspendedForGameplay = true;
                 }
 
-                // Unmounting Chart restores its stock panels. Hide them again while the
-                // gameplay scene owns the screen.
                 StockEditorOverride.Apply(editor);
                 return;
             }
@@ -68,8 +64,6 @@ namespace KineticNapier.ADOFAIWorkbench
             if (suspendedForGameplay)
             {
                 suspendedForGameplay = false;
-                // SetVisible(false) unmounted all panes. Refreshing the registry raises
-                // RegistryChanged, invalidating the shell so Chart is mounted again.
                 Workbench.RefreshAll();
             }
 
