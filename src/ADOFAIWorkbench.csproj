@@ -28,7 +28,7 @@
   <ItemGroup>
     <Compile Include="Main.cs" />
     <Compile Include="Workbench.cs" />
-    <Compile Include="WinFormsWorkbenchWindow.cs" />
+    <Compile Include="DockPanelWorkbenchWindow.cs" />
     <Compile Include="WelcomePane.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
   </ItemGroup>
