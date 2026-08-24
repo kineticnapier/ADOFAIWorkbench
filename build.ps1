@@ -29,7 +29,13 @@ $toolkitGameProject = Join-Path $EditorToolkitRoot "src\ADOFAI.EditorToolkit.ADO
 $toolkitUiHost = Join-Path $EditorToolkitRoot "src\ADOFAI.EditorToolkit.ADOFAI\ADOFAIEditorUiHost.cs"
 if (-not (Test-Path $toolkitUiHost)) { throw "ADOFAIWorkbench requires AdofaiEditorToolkit feature/editor-ui-host or newer." }
 
-$required = @("Assembly-CSharp.dll", "RDTools.dll", "UnityEngine.CoreModule.dll", "UnityEngine.UIModule.dll") | ForEach-Object { Join-Path $GameManagedDir $_ }
+$required = @(
+    "Assembly-CSharp.dll",
+    "RDTools.dll",
+    "UnityEngine.CoreModule.dll",
+    "UnityEngine.SceneManagementModule.dll",
+    "UnityEngine.UIModule.dll"
+) | ForEach-Object { Join-Path $GameManagedDir $_ }
 $required += Join-Path $UmmDir "UnityModManager.dll"
 foreach ($p in $required) { if (-not (Test-Path $p)) { throw "Required reference not found: $p" } }
 
