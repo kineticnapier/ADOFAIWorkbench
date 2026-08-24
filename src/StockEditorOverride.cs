@@ -8,6 +8,7 @@ namespace KineticNapier.ADOFAIWorkbench
     {
         private static scnEditor editor;
         private static readonly Dictionary<GameObject, bool> originalStates = new Dictionary<GameObject, bool>();
+        private static readonly HashSet<GameObject> claimed = new HashSet<GameObject>();
         private static readonly string[] MemberNames =
         {
             "settingsPanel",
@@ -17,10 +18,21 @@ namespace KineticNapier.ADOFAIWorkbench
             "levelStringPanel",
             "findFloorPanel",
             "bottomPanel",
+            "fileActionsPanel",
             "fileActions",
             "filePanel",
             "eventTabs"
         };
+
+        internal static void Claim(GameObject go)
+        {
+            if (go != null) claimed.Add(go);
+        }
+
+        internal static void Release(GameObject go)
+        {
+            if (go != null) claimed.Remove(go);
+        }
 
         internal static void Apply(scnEditor activeEditor)
         {
@@ -34,7 +46,7 @@ namespace KineticNapier.ADOFAIWorkbench
             for (int i = 0; i < MemberNames.Length; i++)
             {
                 GameObject go = Resolve(activeEditor, MemberNames[i]);
-                if (go == null) continue;
+                if (go == null || claimed.Contains(go)) continue;
                 if (!originalStates.ContainsKey(go)) originalStates.Add(go, go.activeSelf);
                 if (go.activeSelf) go.SetActive(false);
             }
@@ -43,8 +55,9 @@ namespace KineticNapier.ADOFAIWorkbench
         internal static void Restore()
         {
             foreach (KeyValuePair<GameObject, bool> pair in originalStates)
-                if (pair.Key != null) pair.Key.SetActive(pair.Value);
+                if (pair.Key != null && !claimed.Contains(pair.Key)) pair.Key.SetActive(pair.Value);
             originalStates.Clear();
+            claimed.Clear();
             editor = null;
         }
 
