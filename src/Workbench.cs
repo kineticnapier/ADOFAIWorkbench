@@ -1,6 +1,8 @@
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
-using UnityEngine;
+using System.Linq;
+using System.Windows;
 
 namespace KineticNapier.ADOFAIWorkbench
 {
@@ -9,8 +11,9 @@ namespace KineticNapier.ADOFAIWorkbench
         string Id { get; }
         string Title { get; }
         bool CanClose { get; }
-        void Mount(RectTransform parent);
-        void Unmount();
+        FrameworkElement CreateView();
+        void OnOpened();
+        void OnClosed();
     }
 
     public interface IDockablePaneProvider
@@ -20,82 +23,115 @@ namespace KineticNapier.ADOFAIWorkbench
 
     public static class Workbench
     {
-        private static readonly List<IDockablePaneProvider> providers = new List<IDockablePaneProvider>();
-        private static readonly Dictionary<string, IDockablePane> panes = new Dictionary<string, IDockablePane>(StringComparer.Ordinal);
+        private static readonly object Gate = new object();
+        private static readonly List<IDockablePaneProvider> Providers = new List<IDockablePaneProvider>();
+        private static readonly Dictionary<string, IDockablePane> PanesById = new Dictionary<string, IDockablePane>(StringComparer.Ordinal);
+        private static readonly ConcurrentQueue<Action> UnityActions = new ConcurrentQueue<Action>();
 
-        public static event Action RegistryChanged;
-
-        public static IEnumerable<IDockablePane> Panes { get { return panes.Values; } }
+        public static IEnumerable<IDockablePane> Panes
+        {
+            get { return GetPanesSnapshot(); }
+        }
 
         public static void RegisterPaneProvider(IDockablePaneProvider provider)
         {
             if (provider == null) throw new ArgumentNullException("provider");
-            if (providers.Contains(provider)) return;
-            providers.Add(provider);
-            RefreshProvider(provider);
+            lock (Gate)
+            {
+                if (Providers.Contains(provider)) return;
+                Providers.Add(provider);
+                AddProviderPanes(provider);
+            }
+            WpfWorkbenchWindowHost.NotifyRegistryChanged();
         }
 
         public static void UnregisterPaneProvider(IDockablePaneProvider provider)
         {
             if (provider == null) return;
-            if (!providers.Remove(provider)) return;
-            RebuildRegistry();
+            lock (Gate)
+            {
+                if (!Providers.Remove(provider)) return;
+                RebuildRegistryLocked();
+            }
+            WpfWorkbenchWindowHost.NotifyRegistryChanged();
         }
 
         public static IDockablePane FindPane(string id)
         {
             if (string.IsNullOrEmpty(id)) return null;
-            IDockablePane pane;
-            return panes.TryGetValue(id, out pane) ? pane : null;
+            lock (Gate)
+            {
+                IDockablePane pane;
+                return PanesById.TryGetValue(id, out pane) ? pane : null;
+            }
         }
 
         public static bool OpenPane(string id)
         {
-            IDockablePane pane = FindPane(id);
-            if (pane == null) return false;
-            NativeWorkbenchShell.OpenPane(pane);
+            if (FindPane(id) == null) return false;
+            WpfWorkbenchWindowHost.OpenPane(id);
             return true;
+        }
+
+        public static void ShowWindow()
+        {
+            WpfWorkbenchWindowHost.ShowWindow();
+        }
+
+        public static void HideWindow()
+        {
+            WpfWorkbenchWindowHost.HideWindow();
+        }
+
+        public static void RunOnUnityThread(Action action)
+        {
+            if (action != null) UnityActions.Enqueue(action);
+        }
+
+        public static void RunOnUiThread(Action action)
+        {
+            WpfWorkbenchWindowHost.Invoke(action);
+        }
+
+        internal static void DrainUnityActions(int maxActions)
+        {
+            int count = 0;
+            Action action;
+            while (count < maxActions && UnityActions.TryDequeue(out action))
+            {
+                count++;
+                try { action(); }
+                catch (Exception ex) { System.Diagnostics.Debug.WriteLine(ex); }
+            }
+        }
+
+        internal static IList<IDockablePane> GetPanesSnapshot()
+        {
+            lock (Gate)
+                return PanesById.Values.OrderBy(p => p.Title, StringComparer.OrdinalIgnoreCase).ToList();
         }
 
         internal static void RefreshAll()
         {
-            RebuildRegistry();
+            lock (Gate) RebuildRegistryLocked();
+            WpfWorkbenchWindowHost.NotifyRegistryChanged();
         }
 
-        private static void RefreshProvider(IDockablePaneProvider provider)
+        private static void AddProviderPanes(IDockablePaneProvider provider)
         {
-            IEnumerable<IDockablePane> created = provider.CreatePanes();
-            if (created != null)
+            IEnumerable<IDockablePane> panes = provider.CreatePanes();
+            if (panes == null) return;
+            foreach (IDockablePane pane in panes)
             {
-                foreach (IDockablePane pane in created)
-                {
-                    if (pane == null || string.IsNullOrWhiteSpace(pane.Id)) continue;
-                    panes[pane.Id] = pane;
-                }
+                if (pane == null || string.IsNullOrWhiteSpace(pane.Id)) continue;
+                PanesById[pane.Id] = pane;
             }
-            RaiseRegistryChanged();
         }
 
-        private static void RebuildRegistry()
+        private static void RebuildRegistryLocked()
         {
-            panes.Clear();
-            for (int i = 0; i < providers.Count; i++)
-            {
-                IEnumerable<IDockablePane> created = providers[i].CreatePanes();
-                if (created == null) continue;
-                foreach (IDockablePane pane in created)
-                {
-                    if (pane == null || string.IsNullOrWhiteSpace(pane.Id)) continue;
-                    panes[pane.Id] = pane;
-                }
-            }
-            RaiseRegistryChanged();
-        }
-
-        private static void RaiseRegistryChanged()
-        {
-            Action handler = RegistryChanged;
-            if (handler != null) handler();
+            PanesById.Clear();
+            for (int i = 0; i < Providers.Count; i++) AddProviderPanes(Providers[i]);
         }
     }
 }
