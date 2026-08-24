@@ -33,7 +33,13 @@ namespace KineticNapier.ADOFAIWorkbench
         internal static void OpenPane(string id)
         {
             EnsureStarted();
-            Invoke(delegate { if (window != null) window.OpenPane(id); });
+            Invoke(delegate
+            {
+                if (window == null) return;
+                if (!window.Visible) window.Show();
+                window.OpenPane(id);
+                window.Activate();
+            });
         }
 
         internal static void NotifyRegistryChanged()
@@ -79,6 +85,7 @@ namespace KineticNapier.ADOFAIWorkbench
             Application.EnableVisualStyles();
             Application.SetCompatibleTextRenderingDefault(false);
             WorkbenchForm created = new WorkbenchForm();
+            IntPtr ignored = created.Handle;
             Action[] pending;
             lock (Gate)
             {
@@ -114,7 +121,6 @@ namespace KineticNapier.ADOFAIWorkbench
         private readonly ToolStripStatusLabel status = new ToolStripStatusLabel();
         private readonly Dictionary<string, OpenPaneState> openPanes = new Dictionary<string, OpenPaneState>(StringComparer.Ordinal);
         private TabControl focusedTabs;
-        private bool allowClose;
 
         internal WorkbenchForm()
         {
@@ -355,7 +361,6 @@ namespace KineticNapier.ADOFAIWorkbench
 
         private void OnFormClosing(object sender, FormClosingEventArgs e)
         {
-            if (allowClose) return;
             e.Cancel = true;
             Hide();
         }
