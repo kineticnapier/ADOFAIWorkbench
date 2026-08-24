@@ -1,7 +1,6 @@
 using System.Collections.Generic;
-using System.Windows;
-using System.Windows.Controls;
-using System.Windows.Media;
+using System.Drawing;
+using System.Windows.Forms;
 
 namespace KineticNapier.ADOFAIWorkbench
 {
@@ -20,33 +19,57 @@ namespace KineticNapier.ADOFAIWorkbench
         public string Title { get { return "Welcome"; } }
         public bool CanClose { get { return false; } }
 
-        public FrameworkElement CreateView()
+        public Control CreateView()
         {
-            Grid root = new Grid { Background = new SolidColorBrush(Color.FromRgb(19, 21, 26)) };
-            StackPanel panel = new StackPanel
+            Panel root = new Panel
             {
-                HorizontalAlignment = HorizontalAlignment.Center,
-                VerticalAlignment = VerticalAlignment.Center,
-                MaxWidth = 760
+                BackColor = Color.FromArgb(19, 21, 26),
+                Dock = DockStyle.Fill
             };
-            panel.Children.Add(new TextBlock
+
+            TableLayoutPanel layout = new TableLayoutPanel
+            {
+                Dock = DockStyle.Fill,
+                ColumnCount = 1,
+                RowCount = 3,
+                BackColor = root.BackColor,
+                Padding = new Padding(24)
+            };
+            layout.RowStyles.Add(new RowStyle(SizeType.Percent, 50f));
+            layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+            layout.RowStyles.Add(new RowStyle(SizeType.Percent, 50f));
+
+            FlowLayoutPanel center = new FlowLayoutPanel
+            {
+                FlowDirection = FlowDirection.TopDown,
+                WrapContents = false,
+                AutoSize = true,
+                Anchor = AnchorStyles.None,
+                BackColor = root.BackColor,
+                MaximumSize = new Size(760, 0)
+            };
+            center.Controls.Add(new Label
             {
                 Text = "ADOFAI Workbench",
-                FontSize = 30,
-                FontWeight = FontWeights.SemiBold,
-                Foreground = Brushes.White,
-                HorizontalAlignment = HorizontalAlignment.Center,
-                Margin = new Thickness(0, 0, 0, 14)
+                AutoSize = true,
+                ForeColor = Color.White,
+                Font = new Font(SystemFonts.MessageBoxFont.FontFamily, 24f, FontStyle.Bold),
+                Margin = new Padding(0, 0, 0, 12)
             });
-            panel.Children.Add(new TextBlock
+            center.Controls.Add(new Label
             {
                 Text = "Standalone dockable tool window. ADOFAI itself stays untouched; consumer mods can add panes and queue commands back to Unity's main thread.",
-                FontSize = 15,
-                Foreground = new SolidColorBrush(Color.FromRgb(200, 204, 214)),
-                TextWrapping = TextWrapping.Wrap,
-                TextAlignment = TextAlignment.Center
+                AutoSize = true,
+                MaximumSize = new Size(740, 0),
+                ForeColor = Color.FromArgb(200, 204, 214),
+                Font = new Font(SystemFonts.MessageBoxFont.FontFamily, 11f),
+                Margin = new Padding(0)
             });
-            root.Children.Add(panel);
+
+            layout.Controls.Add(new Panel(), 0, 0);
+            layout.Controls.Add(center, 0, 1);
+            layout.Controls.Add(new Panel(), 0, 2);
+            root.Controls.Add(layout);
             return root;
         }
 
