@@ -1,16 +1,12 @@
 using System;
 using System.IO;
-using System.Reflection;
 using System.Windows.Forms;
-using WeifenLuo.WinFormsUI.Docking;
 
 namespace KineticNapier.ADOFAIWorkbench.Host
 {
     internal static class HostHardeningV082
     {
-        private const string WelcomePaneId = "workbench.welcome";
         private static bool loggingInstalled;
-        private static bool restrictingWelcome;
 
         internal static void InstallGlobalExceptionLogging()
         {
@@ -33,87 +29,14 @@ namespace KineticNapier.ADOFAIWorkbench.Host
 
         internal static void InstallFormHardening(TcpHostForm form)
         {
-            if (form == null) return;
-
-            DockPanel dockPanel = GetField<DockPanel>(form, "dockPanel");
-            if (dockPanel == null) return;
-
-            EventHandler refresh = delegate
-            {
-                RestrictWelcomePane(dockPanel);
-            };
-
-            dockPanel.ActiveContentChanged += refresh;
-            dockPanel.ActiveDocumentChanged += refresh;
-            form.Shown += delegate { RestrictWelcomePane(dockPanel); };
-            form.Activated += delegate { RestrictWelcomePane(dockPanel); };
-
-            RestrictWelcomePane(dockPanel);
-        }
-
-        private static void RestrictWelcomePane(DockPanel dockPanel)
-        {
-            if (dockPanel == null || restrictingWelcome) return;
-            restrictingWelcome = true;
-            try
-            {
-                for (int i = 0; i < dockPanel.Contents.Count; i++)
-                {
-                    DockContent content = dockPanel.Contents[i] as DockContent;
-                    if (content == null || !IsWelcomePane(content)) continue;
-
-                    // Welcome is a landing/document page, not a tool pane. Keeping it
-                    // out of the drag/dock machinery avoids the crash path reported
-                    // when dragging the non-closeable welcome document.
-                    content.AllowEndUserDocking = false;
-                    content.CloseButton = false;
-                    content.CloseButtonVisible = false;
-
-                    if (content.DockState != DockState.Document && content.DockPanel == dockPanel)
-                    {
-                        try { content.Show(dockPanel, DockState.Document); }
-                        catch (Exception ex) { WriteCrashLog("Failed to restore Welcome to document state", ex); }
-                    }
-
-                    try { content.DockAreas = DockAreas.Document; }
-                    catch (Exception ex) { WriteCrashLog("Failed to restrict Welcome dock areas", ex); }
-                }
-            }
-            catch (Exception ex)
-            {
-                WriteCrashLog("Failed while hardening Welcome pane", ex);
-            }
-            finally
-            {
-                restrictingWelcome = false;
-            }
-        }
-
-        private static bool IsWelcomePane(DockContent content)
-        {
-            try
-            {
-                FieldInfo field = content.GetType().GetField("paneId", BindingFlags.Instance | BindingFlags.NonPublic);
-                string id = field != null ? field.GetValue(content) as string : null;
-                return string.Equals(id, WelcomePaneId, StringComparison.Ordinal);
-            }
-            catch
-            {
-                return false;
-            }
-        }
-
-        private static T GetField<T>(object instance, string name) where T : class
-        {
-            try
-            {
-                FieldInfo field = instance.GetType().GetField(name, BindingFlags.Instance | BindingFlags.NonPublic);
-                return field != null ? field.GetValue(instance) as T : null;
-            }
-            catch
-            {
-                return null;
-            }
+            // Intentionally no DockPanel event hooks here.
+            //
+            // 0.8.2 tried to force the Welcome pane back to Document state from
+            // ActiveContentChanged / ActiveDocumentChanged. Those events fire while
+            // DockPanel Suite is mutating its own docking state, so initiating another
+            // Show/Dock operation from inside them can re-enter DockPanel internals.
+            // Pane-specific docking constraints are now applied once, when the pane
+            // content is constructed, before it is ever shown.
         }
 
         internal static void WriteCrashLog(string context, Exception exception)
