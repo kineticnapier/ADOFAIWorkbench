@@ -23,6 +23,7 @@
     <Compile Include="Workbench.cs" />
     <Compile Include="ExternalWorkbenchHost.cs" />
     <Compile Include="WelcomePane.cs" />
+    <Compile Include="MeasurePane.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
   </ItemGroup>
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
