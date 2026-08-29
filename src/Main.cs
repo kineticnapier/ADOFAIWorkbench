@@ -8,7 +8,6 @@ namespace KineticNapier.ADOFAIWorkbench
     public static class Main
     {
         internal const string Version = "0.8.3";
-        private static readonly MeasurePaneProvider MeasureProvider = new MeasurePaneProvider();
         private static bool enabled;
         private static UnityModManager.ModEntry modEntry;
 
@@ -25,7 +24,6 @@ namespace KineticNapier.ADOFAIWorkbench
             try
             {
                 Workbench.RegisterPaneProvider(new WelcomePaneProvider());
-                Workbench.RegisterPaneProvider(MeasureProvider);
                 entry.Logger.Log("ADOFAI Workbench v" + Version + " loaded (non-blocking loopback TCP + external .NET Framework DockPanel host). ModDir=" + ModDirectory);
                 return true;
             }
@@ -71,7 +69,6 @@ namespace KineticNapier.ADOFAIWorkbench
         {
             if (!enabled) return;
             Workbench.DrainUnityActions(64);
-            MeasureProvider.Refresh(deltaTime);
         }
 
         internal static void Log(string message)
