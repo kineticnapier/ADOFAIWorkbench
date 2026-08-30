@@ -9,6 +9,7 @@ namespace KineticNapier.ADOFAIWorkbench
     {
         internal const string Version = "0.9.0";
         private static bool enabled;
+        private static bool builtInPanesRegistered;
         private static UnityModManager.ModEntry modEntry;
 
         internal static string ModDirectory { get; private set; }
@@ -39,7 +40,15 @@ namespace KineticNapier.ADOFAIWorkbench
             enabled = value;
             try
             {
-                if (value) Workbench.ShowWindow();
+                if (value)
+                {
+                    if (!builtInPanesRegistered)
+                    {
+                        Workbench.RegisterPaneProvider(LanguagePaneProvider.Instance);
+                        builtInPanesRegistered = true;
+                    }
+                    Workbench.ShowWindow();
+                }
                 else Workbench.HideWindow();
                 return true;
             }
