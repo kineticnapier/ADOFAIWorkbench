@@ -24,6 +24,7 @@ namespace KineticNapier.ADOFAIWorkbench
         private static volatile bool shutdownRequested;
         private static volatile bool hostReady;
         private static volatile bool registryDirty = true;
+        private static volatile bool localizationDirty = true;
 
         internal static void ShowWindow()
         {
@@ -50,6 +51,13 @@ namespace KineticNapier.ADOFAIWorkbench
         {
             registryDirty = true;
             EnsureStarted();
+            Signal.Set();
+        }
+
+        internal static void LocalizationChanged()
+        {
+            localizationDirty = true;
+            registryDirty = true;
             Signal.Set();
         }
 
@@ -165,6 +173,7 @@ namespace KineticNapier.ADOFAIWorkbench
                 connection.Connected = true;
                 hostReady = true;
                 registryDirty = true;
+                localizationDirty = true;
                 Main.Log("External Workbench TCP host connected.");
 
                 StreamReader capturedReader = reader;
@@ -181,6 +190,13 @@ namespace KineticNapier.ADOFAIWorkbench
                 while (connection.Connected && !shutdownRequested)
                 {
                     bool wroteAny = false;
+
+                    if (localizationDirty)
+                    {
+                        localizationDirty = false;
+                        SendLocalizationSnapshot(writer);
+                        wroteAny = true;
+                    }
 
                     if (registryDirty)
                     {
@@ -302,10 +318,42 @@ namespace KineticNapier.ADOFAIWorkbench
             {
                 Workbench.DispatchAction(Decode(parts[1]), Decode(parts[2]), Decode(parts[3]));
             }
+            else if (parts.Length >= 2 && string.Equals(parts[0], "LANGUAGE", StringComparison.Ordinal))
+            {
+                string locale = Decode(parts[1]);
+                Workbench.RunOnUnityThread(delegate { WorkbenchLocalization.SetLanguageFromHost(locale); });
+            }
             else if (parts.Length >= 2 && string.Equals(parts[0], "LOG", StringComparison.Ordinal))
             {
                 Main.Log("Host: " + Decode(parts[1]));
             }
+        }
+
+        private static void SendLocalizationSnapshot(StreamWriter writer)
+        {
+            IList<WorkbenchLanguageInfo> languages = WorkbenchLocalization.GetLanguagesSnapshot();
+            writer.WriteLine("I18N_BEGIN|" + Encode(WorkbenchLocalization.CurrentLanguage));
+            for (int i = 0; i < languages.Count; i++)
+            {
+                WorkbenchLanguageInfo language = languages[i];
+                writer.WriteLine("LOCALE|" + Encode(language.Locale) + "|" + Encode(language.DisplayName));
+            }
+
+            writer.WriteLine("CHROME|"
+                + Encode(WorkbenchLocalization.T("workbench", "chrome.panes", "Panes")) + "|"
+                + Encode(WorkbenchLocalization.T("workbench", "chrome.language", "Language")) + "|"
+                + Encode(WorkbenchLocalization.T("workbench", "chrome.saveLayout", "Save Layout")) + "|"
+                + Encode(WorkbenchLocalization.T("workbench", "chrome.resetLayout", "Reset Layout")) + "|"
+                + Encode(WorkbenchLocalization.T("workbench", "chrome.openPane", "Open a pane")) + "|"
+                + Encode(WorkbenchLocalization.T("workbench", "chrome.waiting", "Waiting for ADOFAI...")) + "|"
+                + Encode(WorkbenchLocalization.T("workbench", "chrome.noPanes", "(No panes received)")) + "|"
+                + Encode(WorkbenchLocalization.T("workbench", "chrome.layoutSaved", "Layout saved")) + "|"
+                + Encode(WorkbenchLocalization.T("workbench", "chrome.layoutReset", "Layout reset")) + "|"
+                + Encode(WorkbenchLocalization.T("workbench", "chrome.syncing", "Connected | syncing panes...")) + "|"
+                + Encode(WorkbenchLocalization.T("workbench", "chrome.connected", "Connected | Panes={0}")) + "|"
+                + Encode(WorkbenchLocalization.T("workbench", "chrome.unknownPane", "Unknown pane: {0}")) + "|"
+                + Encode(WorkbenchLocalization.T("workbench", "chrome.layoutSaveFailed", "Layout save failed: {0}")));
+            writer.WriteLine("I18N_END");
         }
 
         private static void SendRegistrySnapshot(StreamWriter writer)
