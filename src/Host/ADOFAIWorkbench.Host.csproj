@@ -26,6 +26,7 @@
     <Compile Include="HostCoreV080.cs" />
     <Compile Include="HostBootstrapV072.cs" />
     <Compile Include="HostHardeningV082.cs" />
+    <Compile Include="SafeLabelV086.cs" />
   </ItemGroup>
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
 </Project>
