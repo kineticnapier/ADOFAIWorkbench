@@ -7,7 +7,7 @@ namespace KineticNapier.ADOFAIWorkbench
 {
     public static class Main
     {
-        internal const string Version = "0.8.6";
+        internal const string Version = "0.9.0";
         private static bool enabled;
         private static UnityModManager.ModEntry modEntry;
 
@@ -23,6 +23,7 @@ namespace KineticNapier.ADOFAIWorkbench
 
             try
             {
+                WorkbenchLocalization.InitializeWorkbenchBundle();
                 entry.Logger.Log("ADOFAI Workbench v" + Version + " loaded (non-blocking loopback TCP + external .NET Framework DockPanel host). ModDir=" + ModDirectory);
                 return true;
             }
