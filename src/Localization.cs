@@ -22,6 +22,8 @@ namespace KineticNapier.ADOFAIWorkbench
         private static readonly object Gate = new object();
         private static readonly Dictionary<string, Dictionary<string, Dictionary<string, string>>> Bundles =
             new Dictionary<string, Dictionary<string, Dictionary<string, string>>>(StringComparer.Ordinal);
+        private static readonly Dictionary<string, Dictionary<string, string>> BundleDisplayNames =
+            new Dictionary<string, Dictionary<string, string>>(StringComparer.Ordinal);
         private static readonly Dictionary<string, string> LocaleDisplayNames =
             new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         private static readonly string StateDirectory = Path.Combine(
@@ -89,9 +91,11 @@ namespace KineticNapier.ADOFAIWorkbench
                 }
                 owner[locale] = copy;
 
-                string existing;
-                if (!LocaleDisplayNames.TryGetValue(locale, out existing) || string.IsNullOrWhiteSpace(existing))
-                    LocaleDisplayNames[locale] = string.IsNullOrWhiteSpace(displayName) ? locale : displayName;
+                Dictionary<string, string> names;
+                if (!BundleDisplayNames.TryGetValue(ownerId, out names))
+                    BundleDisplayNames[ownerId] = names = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+                names[locale] = string.IsNullOrWhiteSpace(displayName) ? locale : displayName;
+                RebuildLocaleDisplayNamesLocked();
             }
             ExternalWorkbenchHost.LocalizationChanged();
         }
@@ -104,6 +108,7 @@ namespace KineticNapier.ADOFAIWorkbench
             lock (Gate)
             {
                 changed = Bundles.Remove(ownerId);
+                BundleDisplayNames.Remove(ownerId);
                 if (changed) RebuildLocaleDisplayNamesLocked();
             }
             if (changed) ExternalWorkbenchHost.LocalizationChanged();
@@ -157,7 +162,12 @@ namespace KineticNapier.ADOFAIWorkbench
                 { "chrome.syncing", "Connected | syncing panes..." },
                 { "chrome.connected", "Connected | Panes={0}" },
                 { "chrome.unknownPane", "Unknown pane: {0}" },
-                { "chrome.layoutSaveFailed", "Layout save failed: {0}" }
+                { "chrome.layoutSaveFailed", "Layout save failed: {0}" },
+                { "language.title", "Language" },
+                { "language.heading", "Workbench Language" },
+                { "language.description", "Choose the language used by Workbench and localization-aware panes." },
+                { "language.none", "No languages are registered." },
+                { "language.current", "Current: {0}" }
             });
             Register("workbench", "ja-JP", "日本語", new Dictionary<string, string>
             {
@@ -173,7 +183,12 @@ namespace KineticNapier.ADOFAIWorkbench
                 { "chrome.syncing", "接続済み | パネル同期中..." },
                 { "chrome.connected", "接続済み | パネル={0}" },
                 { "chrome.unknownPane", "不明なパネル: {0}" },
-                { "chrome.layoutSaveFailed", "レイアウト保存失敗: {0}" }
+                { "chrome.layoutSaveFailed", "レイアウト保存失敗: {0}" },
+                { "language.title", "言語" },
+                { "language.heading", "Workbench 言語" },
+                { "language.description", "Workbenchとローカライズ対応パネルで使用する言語を選択します。" },
+                { "language.none", "登録されている言語がありません。" },
+                { "language.current", "現在: {0}" }
             });
         }
 
@@ -275,10 +290,12 @@ namespace KineticNapier.ADOFAIWorkbench
         private static void RebuildLocaleDisplayNamesLocked()
         {
             LocaleDisplayNames.Clear();
-            foreach (KeyValuePair<string, Dictionary<string, Dictionary<string, string>>> owner in Bundles)
+            foreach (KeyValuePair<string, Dictionary<string, string>> owner in BundleDisplayNames)
             {
-                foreach (string locale in owner.Value.Keys)
-                    if (!LocaleDisplayNames.ContainsKey(locale)) LocaleDisplayNames[locale] = locale;
+                foreach (KeyValuePair<string, string> pair in owner.Value)
+                {
+                    if (!LocaleDisplayNames.ContainsKey(pair.Key)) LocaleDisplayNames[pair.Key] = pair.Value;
+                }
             }
         }
     }
