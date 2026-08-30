@@ -53,6 +53,11 @@ namespace KineticNapier.ADOFAIWorkbench.Host
             Send("ACTION|" + Encode(paneId) + "|" + Encode(actionId) + "|" + Encode(argument));
         }
 
+        internal void SendLanguage(string locale)
+        {
+            Send("LANGUAGE|" + Encode(locale));
+        }
+
         internal void SendLog(string text)
         {
             Send("LOG|" + Encode(text));
@@ -253,6 +258,7 @@ namespace KineticNapier.ADOFAIWorkbench.Host
         private readonly ToolStrip toolbar = new ToolStrip();
         private readonly ToolStripDropDownButton panesMenu = new ToolStripDropDownButton("Panes");
         private readonly ToolStripSeparator paneShortcutSeparator = new ToolStripSeparator();
+        private readonly ToolStripDropDownButton languageMenu = new ToolStripDropDownButton("Language");
         private readonly ToolStripSeparator layoutSeparator = new ToolStripSeparator();
         private readonly ToolStripButton saveButton = new ToolStripButton("Save Layout");
         private readonly ToolStripButton resetButton = new ToolStripButton("Reset Layout");
@@ -261,14 +267,18 @@ namespace KineticNapier.ADOFAIWorkbench.Host
         private readonly ToolStripStatusLabel status = new ToolStripStatusLabel("Waiting for ADOFAI...");
         private readonly Dictionary<string, TcpPaneState> states = new Dictionary<string, TcpPaneState>(StringComparer.Ordinal);
         private readonly Dictionary<string, TcpPaneContent> contents = new Dictionary<string, TcpPaneContent>(StringComparer.Ordinal);
+        private readonly Dictionary<string, string> locales = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        private readonly Dictionary<string, string> chrome = new Dictionary<string, string>(StringComparer.Ordinal);
         private Font tabFont;
         private int syncGeneration;
+        private string currentLocale = "en-US";
         private bool loadingLayout;
         private bool forceExit;
 
         internal TcpHostForm(TcpHostConnection connection)
         {
             this.connection = connection;
+            SeedChromeDefaults();
             Text = "ADOFAI Workbench";
             Width = 1100;
             Height = 720;
@@ -284,12 +294,43 @@ namespace KineticNapier.ADOFAIWorkbench.Host
             ConfigureToolbar();
             ConfigureStatus();
             RebuildPanesUi();
+            RebuildLanguageUi();
             RestoreWindowState();
             RestoreLayout();
 
             FormClosing += OnFormClosing;
             ResizeEnd += delegate { SaveWindowState(); };
             Move += delegate { if (WindowState == FormWindowState.Normal) SaveWindowState(); };
+        }
+
+        private void SeedChromeDefaults()
+        {
+            chrome["panes"] = "Panes";
+            chrome["language"] = "Language";
+            chrome["saveLayout"] = "Save Layout";
+            chrome["resetLayout"] = "Reset Layout";
+            chrome["openPane"] = "Open a pane";
+            chrome["waiting"] = "Waiting for ADOFAI...";
+            chrome["noPanes"] = "(No panes received)";
+            chrome["layoutSaved"] = "Layout saved";
+            chrome["layoutReset"] = "Layout reset";
+            chrome["syncing"] = "Connected | syncing panes...";
+            chrome["connected"] = "Connected | Panes={0}";
+            chrome["unknownPane"] = "Unknown pane: {0}";
+            chrome["layoutSaveFailed"] = "Layout save failed: {0}";
+        }
+
+        private string Chrome(string key, string fallback)
+        {
+            string value;
+            return chrome.TryGetValue(key, out value) && !string.IsNullOrEmpty(value) ? value : fallback;
+        }
+
+        private string ChromeFormat(string key, string fallback, params object[] args)
+        {
+            string format = Chrome(key, fallback);
+            try { return string.Format(CultureInfo.CurrentCulture, format, args ?? new object[0]); }
+            catch { return format; }
         }
 
         private void ConfigureDockPanel()
@@ -315,15 +356,16 @@ namespace KineticNapier.ADOFAIWorkbench.Host
             toolbar.AutoSize = false;
             toolbar.Height = 34;
             toolbar.Padding = new Padding(4, 3, 4, 3);
-            panesMenu.ToolTipText = "Open a pane";
-            saveButton.Click += delegate { SaveLayout(); status.Text = "Layout saved"; };
+            saveButton.Click += delegate { SaveLayout(); status.Text = Chrome("layoutSaved", "Layout saved"); };
             resetButton.Click += delegate { ResetLayout(); };
             toolbar.Items.Add(panesMenu);
             toolbar.Items.Add(paneShortcutSeparator);
+            toolbar.Items.Add(languageMenu);
             toolbar.Items.Add(layoutSeparator);
             toolbar.Items.Add(saveButton);
             toolbar.Items.Add(resetButton);
             Controls.Add(toolbar);
+            ApplyChrome();
             toolbar.BringToFront();
         }
 
@@ -334,7 +376,17 @@ namespace KineticNapier.ADOFAIWorkbench.Host
             statusStrip.ForeColor = TextColor;
             statusStrip.Items.Add(status);
             Controls.Add(statusStrip);
+            status.Text = Chrome("waiting", "Waiting for ADOFAI...");
             statusStrip.BringToFront();
+        }
+
+        private void ApplyChrome()
+        {
+            panesMenu.Text = Chrome("panes", "Panes");
+            languageMenu.Text = Chrome("language", "Language");
+            saveButton.Text = Chrome("saveLayout", "Save Layout");
+            resetButton.Text = Chrome("resetLayout", "Reset Layout");
+            panesMenu.ToolTipText = Chrome("openPane", "Open a pane");
         }
 
         internal void EnsureVisibleAndForeground()
@@ -381,7 +433,42 @@ namespace KineticNapier.ADOFAIWorkbench.Host
                 case "EXIT":
                 case "DISCONNECTED": RequestExit(); break;
                 case "HOST_ERROR": if (parts.Length >= 2) status.Text = TcpHostConnection.Decode(parts[1]); break;
-                case "SYNC_BEGIN": syncGeneration++; status.Text = "Connected | syncing panes..."; break;
+                case "I18N_BEGIN":
+                    locales.Clear();
+                    if (parts.Length >= 2) currentLocale = TcpHostConnection.Decode(parts[1]);
+                    break;
+                case "LOCALE":
+                    if (parts.Length >= 3)
+                    {
+                        string locale = TcpHostConnection.Decode(parts[1]);
+                        string displayName = TcpHostConnection.Decode(parts[2]);
+                        if (!string.IsNullOrWhiteSpace(locale)) locales[locale] = string.IsNullOrWhiteSpace(displayName) ? locale : displayName;
+                    }
+                    break;
+                case "CHROME":
+                    if (parts.Length >= 14)
+                    {
+                        chrome["panes"] = TcpHostConnection.Decode(parts[1]);
+                        chrome["language"] = TcpHostConnection.Decode(parts[2]);
+                        chrome["saveLayout"] = TcpHostConnection.Decode(parts[3]);
+                        chrome["resetLayout"] = TcpHostConnection.Decode(parts[4]);
+                        chrome["openPane"] = TcpHostConnection.Decode(parts[5]);
+                        chrome["waiting"] = TcpHostConnection.Decode(parts[6]);
+                        chrome["noPanes"] = TcpHostConnection.Decode(parts[7]);
+                        chrome["layoutSaved"] = TcpHostConnection.Decode(parts[8]);
+                        chrome["layoutReset"] = TcpHostConnection.Decode(parts[9]);
+                        chrome["syncing"] = TcpHostConnection.Decode(parts[10]);
+                        chrome["connected"] = TcpHostConnection.Decode(parts[11]);
+                        chrome["unknownPane"] = TcpHostConnection.Decode(parts[12]);
+                        chrome["layoutSaveFailed"] = TcpHostConnection.Decode(parts[13]);
+                    }
+                    break;
+                case "I18N_END":
+                    ApplyChrome();
+                    RebuildLanguageUi();
+                    RebuildPanesUi();
+                    break;
+                case "SYNC_BEGIN": syncGeneration++; status.Text = Chrome("syncing", "Connected | syncing panes..."); break;
                 case "PANE":
                     if (parts.Length >= 4)
                     {
@@ -412,9 +499,8 @@ namespace KineticNapier.ADOFAIWorkbench.Host
                 case "SYNC_END":
                     RemoveStaleStates();
                     RebuildPanesUi();
-                    status.Text = "Connected | Panes=" + states.Count.ToString();
+                    status.Text = ChromeFormat("connected", "Connected | Panes={0}", states.Count);
                     connection.SendLog("Synced panes=" + states.Count.ToString());
-                    if (dockPanel.Contents.Count == 0 && states.ContainsKey("workbench.welcome")) OpenPane("workbench.welcome");
                     break;
             }
         }
@@ -425,6 +511,27 @@ namespace KineticNapier.ADOFAIWorkbench.Host
             foreach (KeyValuePair<string, TcpPaneState> pair in states)
                 if (pair.Value.SyncGeneration != syncGeneration) stale.Add(pair.Key);
             for (int i = 0; i < stale.Count; i++) states.Remove(stale[i]);
+        }
+
+        private void RebuildLanguageUi()
+        {
+            languageMenu.DropDownItems.Clear();
+            var list = new List<KeyValuePair<string, string>>(locales);
+            list.Sort(delegate(KeyValuePair<string, string> a, KeyValuePair<string, string> b)
+            {
+                return string.Compare(a.Value, b.Value, StringComparison.CurrentCultureIgnoreCase);
+            });
+
+            for (int i = 0; i < list.Count; i++)
+            {
+                string locale = list[i].Key;
+                ToolStripMenuItem item = new ToolStripMenuItem(list[i].Value ?? locale);
+                item.Checked = string.Equals(locale, currentLocale, StringComparison.OrdinalIgnoreCase);
+                item.Click += delegate { connection.SendLanguage(locale); };
+                languageMenu.DropDownItems.Add(item);
+            }
+
+            languageMenu.Enabled = list.Count > 0;
         }
 
         private void RebuildPanesUi()
@@ -439,13 +546,13 @@ namespace KineticNapier.ADOFAIWorkbench.Host
 
             if (states.Count == 0)
             {
-                panesMenu.DropDownItems.Add(new ToolStripMenuItem("(No panes received)") { Enabled = false });
+                panesMenu.DropDownItems.Add(new ToolStripMenuItem(Chrome("noPanes", "(No panes received)")) { Enabled = false });
                 return;
             }
 
             var list = new List<TcpPaneState>(states.Values);
             list.Sort(delegate(TcpPaneState a, TcpPaneState b) { return string.Compare(a.Title, b.Title, StringComparison.OrdinalIgnoreCase); });
-            int insertAt = toolbar.Items.IndexOf(layoutSeparator);
+            int insertAt = toolbar.Items.IndexOf(languageMenu);
             for (int i = 0; i < list.Count; i++)
             {
                 TcpPaneState state = list[i];
@@ -467,7 +574,7 @@ namespace KineticNapier.ADOFAIWorkbench.Host
         {
             if (string.IsNullOrWhiteSpace(id)) return;
             TcpPaneState state;
-            if (!states.TryGetValue(id, out state)) { status.Text = "Unknown pane: " + id; return; }
+            if (!states.TryGetValue(id, out state)) { status.Text = ChromeFormat("unknownPane", "Unknown pane: {0}", id); return; }
             TcpPaneContent content;
             if (contents.TryGetValue(id, out content) && content != null && !content.IsDisposed)
             {
@@ -516,7 +623,7 @@ namespace KineticNapier.ADOFAIWorkbench.Host
                 dockPanel.SaveAsXml(LayoutPath);
                 SaveWindowState();
             }
-            catch (Exception ex) { status.Text = "Layout save failed: " + ex.Message; }
+            catch (Exception ex) { status.Text = ChromeFormat("layoutSaveFailed", "Layout save failed: {0}", ex.Message); }
         }
 
         private void RestoreLayout()
@@ -553,8 +660,7 @@ namespace KineticNapier.ADOFAIWorkbench.Host
                 try { if (File.Exists(LayoutPath)) File.Delete(LayoutPath); } catch { }
             }
             finally { loadingLayout = false; }
-            if (states.ContainsKey("workbench.welcome")) OpenPane("workbench.welcome");
-            status.Text = "Layout reset";
+            status.Text = Chrome("layoutReset", "Layout reset");
         }
 
         private void RestoreWindowState()
