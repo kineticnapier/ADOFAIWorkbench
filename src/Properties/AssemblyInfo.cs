@@ -7,5 +7,5 @@ using System.Runtime.InteropServices;
 [assembly: AssemblyProduct("ADOFAIWorkbench")]
 [assembly: ComVisible(false)]
 [assembly: Guid("9d75d4a1-5c0d-4ec2-8f3b-665b9c7ea5b2")]
-[assembly: AssemblyVersion("0.8.3.0")]
-[assembly: AssemblyFileVersion("0.8.3.0")]
+[assembly: AssemblyVersion("0.8.4.0")]
+[assembly: AssemblyFileVersion("0.8.4.0")]
