@@ -9,8 +9,9 @@ ADOFAIWorkbench deliberately leaves the stock ADOFAI editor UI and rendering unt
 - Visual Studio-style tabbed panes powered by DockPanel Suite.
 - Drag tool panes to dock left / right / top / bottom or combine them as tabs.
 - Floating tool windows.
-- Welcome is a fixed document page and is intentionally not draggable.
 - Close and reopen panes from the `Panes` menu.
+- Shared localization service for Workbench and third-party mod panes.
+- Built-in `Language` pane; language choice is persisted at `%AppData%\ADOFAIWorkbench\language.txt`.
 - Persist DockPanel layout with `SaveAsXml` / `LoadFromXml`.
 - Layout is stored at `%AppData%\ADOFAIWorkbench\layout.xml`.
 - Window bounds are stored separately at `%AppData%\ADOFAIWorkbench\window.txt`.
@@ -26,6 +27,7 @@ ADOFAI / Unity / Mono process
 +-------------------------------+
 | ADOFAIWorkbench.dll           |
 | - pane registry               |
+| - localization registry       |
 | - snapshots / view protocol   |
 | - Unity main-thread queue     |
 +---------------+---------------+
@@ -107,6 +109,54 @@ Workbench.OpenPane("example.my-pane");
 ```
 
 Call `Workbench.PublishPane(id)` after the pane state changes so the external Host receives a fresh view snapshot. Call `Workbench.UnregisterPaneProvider(provider)` when the supplying mod is disabled or unloaded.
+
+## Localization API
+
+Localization lives in `ADOFAIWorkbench.dll`; third-party mods do not need to send dictionaries to the external Host. A mod registers one bundle per locale and resolves strings while building its pane.
+
+```csharp
+WorkbenchLocalization.Register(
+    "example.mod",
+    "en-US",
+    "English",
+    new Dictionary<string, string>
+    {
+        { "pane.title", "My Tool" },
+        { "run", "Run" }
+    });
+
+WorkbenchLocalization.Register(
+    "example.mod",
+    "ja-JP",
+    "日本語",
+    new Dictionary<string, string>
+    {
+        { "pane.title", "マイツール" },
+        { "run", "実行" }
+    });
+```
+
+Resolve strings with a stable owner id and key:
+
+```csharp
+string title = WorkbenchLocalization.T("example.mod", "pane.title", "My Tool");
+string message = WorkbenchLocalization.Format(
+    "example.mod", "items", "Items: {0}", itemCount);
+```
+
+`T` resolves the current locale, then a neutral-language match, then `en-US` / `en`, and finally the supplied fallback (or the key when no fallback is supplied). Any BCP-47-style locale id can be registered; the built-in Workbench bundle currently supplies `en-US` and `ja-JP`.
+
+Useful API members:
+
+```csharp
+string locale = WorkbenchLocalization.CurrentLanguage;
+IList<WorkbenchLanguageInfo> languages = WorkbenchLocalization.AvailableLanguages;
+WorkbenchLocalization.SetLanguage("ja-JP");
+WorkbenchLocalization.LanguageChanged += OnLanguageChanged;
+WorkbenchLocalization.UnregisterOwner("example.mod");
+```
+
+Changing the language marks the full Workbench pane registry dirty, so pane titles and `BuildView()` output are rebuilt automatically. `LanguageChanged` is available for mods that also cache localized strings outside their pane snapshots.
 
 ## Diagnostics
 
