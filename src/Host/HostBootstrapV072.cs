@@ -1,6 +1,7 @@
 using System;
 using System.Diagnostics;
 using System.Drawing;
+using System.IO;
 using System.Reflection;
 using System.Threading;
 using System.Windows.Forms;
@@ -25,6 +26,7 @@ namespace KineticNapier.ADOFAIWorkbench.Host
 
             try
             {
+                RemoveLegacyWelcomeLayout();
                 Application.EnableVisualStyles();
                 Application.SetCompatibleTextRenderingDefault(false);
                 StartParentGuard(parentPid);
@@ -34,7 +36,6 @@ namespace KineticNapier.ADOFAIWorkbench.Host
                 {
                     FixChromeLayout(form);
                     InstallCloseBehavior(form);
-                    HostHardeningV082.InstallFormHardening(form);
 
                     form.Shown += delegate
                     {
@@ -48,6 +49,23 @@ namespace KineticNapier.ADOFAIWorkbench.Host
             {
                 HostHardeningV082.WriteCrashLog("Fatal exception in host Main", ex);
             }
+        }
+
+        private static void RemoveLegacyWelcomeLayout()
+        {
+            try
+            {
+                string directory = Path.Combine(
+                    Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
+                    "ADOFAIWorkbench");
+                string layoutPath = Path.Combine(directory, "layout.xml");
+                if (!File.Exists(layoutPath)) return;
+
+                string xml = File.ReadAllText(layoutPath);
+                if (xml.IndexOf("pane:workbench.welcome", StringComparison.Ordinal) >= 0)
+                    File.Delete(layoutPath);
+            }
+            catch { }
         }
 
         private static void StartParentGuard(int parentPid)
