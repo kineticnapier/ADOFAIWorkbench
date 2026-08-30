@@ -21,6 +21,7 @@
   <ItemGroup>
     <Compile Include="Main.cs" />
     <Compile Include="Workbench.cs" />
+    <Compile Include="Localization.cs" />
     <Compile Include="ExternalWorkbenchHost.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
   </ItemGroup>
