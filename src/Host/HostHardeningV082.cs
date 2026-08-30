@@ -1,14 +1,12 @@
 using System;
+using System.Drawing;
 using System.IO;
-using System.Reflection;
 using System.Windows.Forms;
-using WeifenLuo.WinFormsUI.Docking;
 
 namespace KineticNapier.ADOFAIWorkbench.Host
 {
     internal static class HostHardeningV082
     {
-        private const string WelcomePaneId = "workbench.welcome";
         private static bool loggingInstalled;
 
         internal static void InstallGlobalExceptionLogging()
@@ -33,16 +31,15 @@ namespace KineticNapier.ADOFAIWorkbench.Host
         internal static void InstallFormHardening(TcpHostForm form)
         {
             if (form == null) return;
-            DockPanel dockPanel = GetField<DockPanel>(form, "dockPanel");
-            if (dockPanel == null) return;
 
-            // Do not mutate DockPanel from ActiveContentChanged/ActiveDocumentChanged.
-            // Those events are raised while DockPanel Suite is changing docking state;
-            // 0.8.2 could therefore re-enter DockPanel by calling Show(Document) while
-            // MTE panes were opening as the editor scene came up.
+            // A nested AutoSize FlowLayoutPanel can be measured before its TextBox
+            // children are added. With the default GrowOnly + wrapping behavior the
+            // row can then keep the width of its first Label and clip the TextBox and
+            // every control after it. Button-only rows usually expand, which made the
+            // bug look input-specific.
             //
-            // A WinForms timer runs only after the current message has completed, so
-            // it is a safe place to apply static constraints to the Welcome document.
+            // Re-check after message processing so newly rebuilt pane rows are fixed
+            // without touching the pane renderer while it is mutating Controls.
             Timer timer = new Timer { Interval = 100 };
             timer.Tick += delegate
             {
@@ -52,7 +49,9 @@ namespace KineticNapier.ADOFAIWorkbench.Host
                     timer.Dispose();
                     return;
                 }
-                RestrictWelcomePane(dockPanel);
+
+                try { FixPaneLayouts(form); }
+                catch (Exception ex) { WriteCrashLog("Failed to normalize pane row layout", ex); }
             };
             form.FormClosed += delegate
             {
@@ -61,57 +60,49 @@ namespace KineticNapier.ADOFAIWorkbench.Host
             timer.Start();
         }
 
-        private static void RestrictWelcomePane(DockPanel dockPanel)
+        private static void FixPaneLayouts(Control control)
         {
-            if (dockPanel == null) return;
-            try
-            {
-                for (int i = 0; i < dockPanel.Contents.Count; i++)
-                {
-                    DockContent content = dockPanel.Contents[i] as DockContent;
-                    if (content == null || !IsWelcomePane(content)) continue;
+            if (control == null || control.IsDisposed) return;
 
-                    content.AllowEndUserDocking = false;
-                    content.CloseButton = false;
-                    content.CloseButtonVisible = false;
+            // Walk children first so PreferredSize is based on already-normalized
+            // descendants when this container is measured.
+            for (int i = 0; i < control.Controls.Count; i++)
+                FixPaneLayouts(control.Controls[i]);
 
-                    // Never force a dock-state transition here. If an old saved layout
-                    // already has Welcome floating, leave it there but make it immovable.
-                    // New layouts create it as Document, where Document-only is safe.
-                    if (content.DockState == DockState.Document)
-                        content.DockAreas = DockAreas.Document;
-                }
-            }
-            catch (Exception ex)
-            {
-                WriteCrashLog("Failed to apply Welcome pane constraints", ex);
-            }
-        }
+            FlowLayoutPanel row = control as FlowLayoutPanel;
+            FlowLayoutPanel parentFlow = control.Parent as FlowLayoutPanel;
+            if (row == null || parentFlow == null || row.FlowDirection != FlowDirection.LeftToRight) return;
 
-        private static bool IsWelcomePane(DockContent content)
-        {
-            try
+            bool changed = false;
+            if (!row.AutoSize)
             {
-                FieldInfo field = content.GetType().GetField("paneId", BindingFlags.Instance | BindingFlags.NonPublic);
-                string id = field != null ? field.GetValue(content) as string : null;
-                return string.Equals(id, WelcomePaneId, StringComparison.Ordinal);
+                row.AutoSize = true;
+                changed = true;
             }
-            catch
+            if (row.AutoSizeMode != AutoSizeMode.GrowAndShrink)
             {
-                return false;
+                row.AutoSizeMode = AutoSizeMode.GrowAndShrink;
+                changed = true;
             }
-        }
+            if (row.WrapContents)
+            {
+                // Keep one logical Workbench row on one physical line. If it is wider
+                // than the pane, the outer AutoScroll panel can scroll horizontally;
+                // silently clipping controls is never acceptable.
+                row.WrapContents = false;
+                changed = true;
+            }
+            if (row.MinimumSize.Height < 36)
+            {
+                row.MinimumSize = new Size(row.MinimumSize.Width, 36);
+                changed = true;
+            }
 
-        private static T GetField<T>(object instance, string name) where T : class
-        {
-            try
+            if (changed)
             {
-                FieldInfo field = instance.GetType().GetField(name, BindingFlags.Instance | BindingFlags.NonPublic);
-                return field != null ? field.GetValue(instance) as T : null;
-            }
-            catch
-            {
-                return null;
+                row.PerformLayout();
+                parentFlow.PerformLayout();
+                row.Invalidate(true);
             }
         }
 
