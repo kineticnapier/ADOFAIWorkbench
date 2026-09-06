@@ -3,6 +3,7 @@ using System.Diagnostics;
 using System.Drawing;
 using System.IO;
 using System.Reflection;
+using System.Runtime.InteropServices;
 using System.Threading;
 using System.Windows.Forms;
 using WeifenLuo.WinFormsUI.Docking;
@@ -11,6 +12,9 @@ namespace KineticNapier.ADOFAIWorkbench.Host
 {
     internal static class TcpProgramV072
     {
+        [DllImport("shell32.dll", CharSet = CharSet.Unicode)]
+        private static extern int SetCurrentProcessExplicitAppUserModelID(string appId);
+
         [STAThread]
         private static void Main(string[] args)
         {
@@ -26,6 +30,12 @@ namespace KineticNapier.ADOFAIWorkbench.Host
 
             try
             {
+                // Keep the external workspace distinct from ADOFAI for Windows taskbar
+                // grouping and application-capture tools such as Discord. The host still
+                // watches ADOFAI explicitly through parentPid below; this only changes the
+                // shell/application identity.
+                try { SetCurrentProcessExplicitAppUserModelID("KineticNapier.ADOFAIWorkbench.Host"); } catch { }
+
                 RemoveLegacyWelcomeLayout();
                 Application.EnableVisualStyles();
                 Application.SetCompatibleTextRenderingDefault(false);
@@ -41,6 +51,10 @@ namespace KineticNapier.ADOFAIWorkbench.Host
                     {
                         form.EnsureVisibleAndForeground();
                         connection.Start(form.ReceiveMessage);
+                        // The bridge launches us through a short-lived shell process so we
+                        // are not a live child of the game. Report the real host PID back so
+                        // it can still monitor and terminate us cleanly on unload.
+                        connection.SendLog("HOSTPID=" + Process.GetCurrentProcess().Id.ToString());
                     };
                     Application.Run(form);
                 }
