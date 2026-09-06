@@ -20,6 +20,7 @@ namespace KineticNapier.ADOFAIWorkbench
         private static readonly AutoResetEvent Signal = new AutoResetEvent(false);
 
         private static int workerRunning;
+        private static volatile int hostProcessId;
         private static volatile bool showRequested;
         private static volatile bool shutdownRequested;
         private static volatile bool hostReady;
@@ -108,8 +109,10 @@ namespace KineticNapier.ADOFAIWorkbench
             NetworkStream stream = null;
             StreamReader reader = null;
             StreamWriter writer = null;
+            Process launcherProcess = null;
             Process hostProcess = null;
             ConnectionState connection = new ConnectionState();
+            hostProcessId = 0;
 
             try
             {
@@ -126,34 +129,40 @@ namespace KineticNapier.ADOFAIWorkbench
                 string token = Guid.NewGuid().ToString("N") + Guid.NewGuid().ToString("N");
                 int parentPid = Process.GetCurrentProcess().Id;
 
+                // Do not spawn the host directly from ADOFAI. Discord and similar
+                // application-capture tools may group child processes with the selected
+                // game/application. A short-lived cmd / start launcher gives the WinForms
+                // host an independent process-tree identity while parentPid still provides
+                // explicit lifetime supervision inside the host.
+                string comSpec = Environment.GetEnvironmentVariable("ComSpec");
+                if (string.IsNullOrWhiteSpace(comSpec))
+                    comSpec = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.System), "cmd.exe");
+
+                string hostArguments = port.ToString() + " \"" + token + "\" " + parentPid.ToString();
                 var start = new ProcessStartInfo
                 {
-                    FileName = exe,
-                    Arguments = port.ToString() + " \"" + token + "\" " + parentPid.ToString(),
+                    FileName = comSpec,
+                    Arguments = "/d /s /c start \"\" \"" + exe + "\" " + hostArguments,
                     WorkingDirectory = Main.ModDirectory,
                     UseShellExecute = false,
-                    CreateNoWindow = true
+                    CreateNoWindow = true,
+                    WindowStyle = ProcessWindowStyle.Hidden
                 };
 
-                hostProcess = Process.Start(start);
-                Main.Log("Started external Workbench TCP host. PID=" +
-                    (hostProcess != null ? hostProcess.Id.ToString() : "?") +
+                launcherProcess = Process.Start(start);
+                Main.Log("Started detached external Workbench host launcher. PID=" +
+                    (launcherProcess != null ? launcherProcess.Id.ToString() : "?") +
                     " port=" + port.ToString());
 
                 // Poll instead of blocking in AcceptTcpClient so shutdown can interrupt
                 // connection setup without touching the listener from Unity's thread.
+                // The launcher is expected to exit almost immediately, so only the TCP
+                // connection deadline is meaningful here.
+                DateTime connectDeadline = DateTime.UtcNow.AddSeconds(10.0);
                 while (!shutdownRequested && !listener.Pending())
                 {
-                    if (hostProcess != null)
-                    {
-                        try
-                        {
-                            if (hostProcess.HasExited)
-                                throw new InvalidOperationException("Workbench host exited before connecting.");
-                        }
-                        catch (InvalidOperationException) { throw; }
-                        catch { }
-                    }
+                    if (DateTime.UtcNow >= connectDeadline)
+                        throw new TimeoutException("Workbench host did not connect within 10 seconds.");
                     Thread.Sleep(25);
                 }
 
@@ -190,6 +199,16 @@ namespace KineticNapier.ADOFAIWorkbench
                 while (connection.Connected && !shutdownRequested)
                 {
                     bool wroteAny = false;
+
+                    if (hostProcess == null && hostProcessId > 0)
+                    {
+                        try
+                        {
+                            hostProcess = Process.GetProcessById(hostProcessId);
+                            Main.Log("Attached to detached Workbench host. PID=" + hostProcessId.ToString());
+                        }
+                        catch { }
+                    }
 
                     if (localizationDirty)
                     {
@@ -269,6 +288,11 @@ namespace KineticNapier.ADOFAIWorkbench
                 try { if (client != null) client.Close(); } catch { }
                 try { if (listener != null) listener.Stop(); } catch { }
 
+                if (hostProcess == null && hostProcessId > 0)
+                {
+                    try { hostProcess = Process.GetProcessById(hostProcessId); } catch { }
+                }
+
                 if (hostProcess != null)
                 {
                     try
@@ -282,6 +306,8 @@ namespace KineticNapier.ADOFAIWorkbench
                     try { hostProcess.Dispose(); } catch { }
                 }
 
+                try { if (launcherProcess != null) launcherProcess.Dispose(); } catch { }
+                hostProcessId = 0;
                 Interlocked.Exchange(ref workerRunning, 0);
             }
         }
@@ -325,7 +351,18 @@ namespace KineticNapier.ADOFAIWorkbench
             }
             else if (parts.Length >= 2 && string.Equals(parts[0], "LOG", StringComparison.Ordinal))
             {
-                Main.Log("Host: " + Decode(parts[1]));
+                string message = Decode(parts[1]);
+                if (message.StartsWith("HOSTPID=", StringComparison.Ordinal))
+                {
+                    int pid;
+                    if (int.TryParse(message.Substring("HOSTPID=".Length), out pid) && pid > 0)
+                    {
+                        hostProcessId = pid;
+                        Main.Log("Host reported detached PID=" + pid.ToString());
+                        Signal.Set();
+                    }
+                }
+                else Main.Log("Host: " + message);
             }
         }
 
