@@ -204,7 +204,7 @@ namespace KineticNapier.ADOFAIWorkbench.Host
         internal int SyncGeneration;
     }
 
-    internal sealed class BufferedFlowLayoutPanel : FlowLayoutPanel
+    internal class BufferedFlowLayoutPanel : FlowLayoutPanel
     {
         internal BufferedFlowLayoutPanel()
         {
@@ -225,6 +225,13 @@ namespace KineticNapier.ADOFAIWorkbench.Host
         internal bool Enabled = true;
         internal bool Checked;
         internal int Height;
+        internal readonly List<UiOption> Options = new List<UiOption>();
+    }
+
+    internal sealed class UiOption
+    {
+        internal string Value;
+        internal string Label;
     }
 
     internal sealed class ButtonBinding
@@ -243,6 +250,65 @@ namespace KineticNapier.ADOFAIWorkbench.Host
     {
         internal string Action;
         internal bool Updating;
+    }
+
+    internal sealed class DropdownBinding
+    {
+        internal string Action;
+        internal bool Updating;
+    }
+
+    internal sealed class DropdownItem
+    {
+        internal string Value;
+        internal string Label;
+
+        public override string ToString()
+        {
+            return Label ?? string.Empty;
+        }
+    }
+
+    internal sealed class SectionBinding
+    {
+        internal string Action;
+        internal string Argument;
+    }
+
+    internal sealed class CollapsibleSectionPanel : BufferedFlowLayoutPanel
+    {
+        internal readonly Button Header = new Button();
+        internal readonly BufferedFlowLayoutPanel Content = new BufferedFlowLayoutPanel();
+
+        internal CollapsibleSectionPanel()
+        {
+            AutoSize = true;
+            AutoSizeMode = AutoSizeMode.GrowAndShrink;
+            FlowDirection = FlowDirection.TopDown;
+            WrapContents = false;
+            Margin = new Padding(0, 6, 0, 8);
+            BackColor = Color.FromArgb(19, 21, 26);
+
+            Header.AutoSize = false;
+            Header.Size = new Size(430, 32);
+            Header.Margin = new Padding(0, 0, 0, 4);
+            Header.Padding = new Padding(8, 0, 8, 0);
+            Header.FlatStyle = FlatStyle.Flat;
+            Header.FlatAppearance.BorderColor = Color.FromArgb(75, 80, 92);
+            Header.BackColor = Color.FromArgb(42, 46, 56);
+            Header.ForeColor = Color.White;
+            Header.TextAlign = ContentAlignment.MiddleLeft;
+
+            Content.AutoSize = true;
+            Content.AutoSizeMode = AutoSizeMode.GrowAndShrink;
+            Content.FlowDirection = FlowDirection.TopDown;
+            Content.WrapContents = false;
+            Content.Margin = new Padding(12, 0, 0, 0);
+            Content.BackColor = BackColor;
+
+            Controls.Add(Header);
+            Controls.Add(Content);
+        }
     }
 
     internal sealed class TcpHostForm : Form
@@ -813,6 +879,31 @@ namespace KineticNapier.ADOFAIWorkbench.Host
                     spec.Action = TcpHostConnection.Decode(p[2]);
                     spec.Checked = p[3] == "1";
                 }
+                else if (p[0] == "D" && p.Length >= 4)
+                {
+                    spec.Text = TcpHostConnection.Decode(p[1]);
+                    spec.Action = TcpHostConnection.Decode(p[2]);
+                    int optionCount;
+                    if (!int.TryParse(p[3], NumberStyles.Integer, CultureInfo.InvariantCulture, out optionCount))
+                        optionCount = 0;
+                    optionCount = Math.Max(0, Math.Min(optionCount, (p.Length - 4) / 2));
+                    for (int optionIndex = 0; optionIndex < optionCount; optionIndex++)
+                    {
+                        int fieldIndex = 4 + optionIndex * 2;
+                        spec.Options.Add(new UiOption
+                        {
+                            Value = TcpHostConnection.Decode(p[fieldIndex]),
+                            Label = TcpHostConnection.Decode(p[fieldIndex + 1])
+                        });
+                    }
+                }
+                else if (p[0] == "G+" && p.Length >= 5)
+                {
+                    spec.Text = TcpHostConnection.Decode(p[1]);
+                    spec.Action = TcpHostConnection.Decode(p[2]);
+                    spec.Argument = TcpHostConnection.Decode(p[3]);
+                    spec.Checked = p[4] == "1";
+                }
                 else if (p[0] == "S" && p.Length >= 2)
                 {
                     if (!int.TryParse(p[1], out spec.Height)) spec.Height = 4;
@@ -831,7 +922,8 @@ namespace KineticNapier.ADOFAIWorkbench.Host
 
         private static bool IsRenderable(string kind)
         {
-            return kind == "T" || kind == "B" || kind == "I" || kind == "C" || kind == "S";
+            return kind == "T" || kind == "B" || kind == "I" || kind == "C" || kind == "D" ||
+                kind == "G+" || kind == "S";
         }
 
         private static int CountRenderable(List<UiSpec> specs)
@@ -872,6 +964,7 @@ namespace KineticNapier.ADOFAIWorkbench.Host
                 }
                 renderedControls.Clear();
                 Control parent = root;
+                Stack<Control> parents = new Stack<Control>();
                 for (int i = 0; i < specs.Count; i++)
                 {
                     UiSpec spec = specs[i];
@@ -885,10 +978,29 @@ namespace KineticNapier.ADOFAIWorkbench.Host
                             Margin = new Padding(0, 2, 0, 6),
                             BackColor = root.BackColor
                         };
-                        root.Controls.Add(row);
+                        AddTo(parent, row);
+                        parents.Push(parent);
                         parent = row;
                     }
-                    else if (spec.Kind == "R-") parent = root;
+                    else if (spec.Kind == "R-")
+                    {
+                        if (parents.Count > 0) parent = parents.Pop();
+                    }
+                    else if (spec.Kind == "G+")
+                    {
+                        CollapsibleSectionPanel section = CreateControl(spec) as CollapsibleSectionPanel;
+                        if (section != null)
+                        {
+                            AddTo(parent, section);
+                            renderedControls.Add(section);
+                            parents.Push(parent);
+                            parent = section.Content;
+                        }
+                    }
+                    else if (spec.Kind == "G-")
+                    {
+                        if (parents.Count > 0) parent = parents.Pop();
+                    }
                     else
                     {
                         Control control = CreateControl(spec);
@@ -940,6 +1052,28 @@ namespace KineticNapier.ADOFAIWorkbench.Host
                 box.CheckedChanged += OnToggleChanged;
                 ApplySpec(box, spec);
                 return box;
+            }
+            if (spec.Kind == "D")
+            {
+                ComboBox dropdown = new ComboBox
+                {
+                    Width = 220,
+                    Margin = new Padding(2, 4, 6, 4),
+                    DropDownStyle = ComboBoxStyle.DropDownList,
+                    BackColor = Color.FromArgb(31, 34, 41),
+                    ForeColor = Color.White,
+                    FlatStyle = FlatStyle.Flat
+                };
+                dropdown.SelectedIndexChanged += OnDropdownChanged;
+                ApplySpec(dropdown, spec);
+                return dropdown;
+            }
+            if (spec.Kind == "G+")
+            {
+                CollapsibleSectionPanel section = new CollapsibleSectionPanel();
+                section.Header.Click += OnSectionHeaderClick;
+                ApplySpec(section, spec);
+                return section;
             }
             if (spec.Kind == "S")
             {
@@ -1005,6 +1139,70 @@ namespace KineticNapier.ADOFAIWorkbench.Host
                 return;
             }
 
+            ComboBox dropdown = control as ComboBox;
+            if (dropdown != null && spec.Kind == "D")
+            {
+                DropdownBinding binding = dropdown.Tag as DropdownBinding;
+                if (binding == null) dropdown.Tag = binding = new DropdownBinding();
+                binding.Updating = true;
+                binding.Action = spec.Action ?? string.Empty;
+
+                bool optionsChanged = dropdown.Items.Count != spec.Options.Count;
+                if (!optionsChanged)
+                {
+                    for (int i = 0; i < spec.Options.Count; i++)
+                    {
+                        DropdownItem item = dropdown.Items[i] as DropdownItem;
+                        UiOption option = spec.Options[i];
+                        if (item == null || !string.Equals(item.Value, option.Value, StringComparison.Ordinal) ||
+                            !string.Equals(item.Label, option.Label, StringComparison.Ordinal))
+                        {
+                            optionsChanged = true;
+                            break;
+                        }
+                    }
+                }
+
+                if (optionsChanged)
+                {
+                    dropdown.Items.Clear();
+                    for (int i = 0; i < spec.Options.Count; i++)
+                    {
+                        dropdown.Items.Add(new DropdownItem
+                        {
+                            Value = spec.Options[i].Value,
+                            Label = spec.Options[i].Label
+                        });
+                    }
+                }
+
+                int selectedIndex = -1;
+                for (int i = 0; i < dropdown.Items.Count; i++)
+                {
+                    DropdownItem item = dropdown.Items[i] as DropdownItem;
+                    if (item != null && string.Equals(item.Value, spec.Text ?? string.Empty, StringComparison.Ordinal))
+                    {
+                        selectedIndex = i;
+                        break;
+                    }
+                }
+                dropdown.SelectedIndex = selectedIndex;
+                binding.Updating = false;
+                return;
+            }
+
+            CollapsibleSectionPanel section = control as CollapsibleSectionPanel;
+            if (section != null && spec.Kind == "G+")
+            {
+                SectionBinding binding = section.Header.Tag as SectionBinding;
+                if (binding == null) section.Header.Tag = binding = new SectionBinding();
+                binding.Action = spec.Action ?? string.Empty;
+                binding.Argument = spec.Argument ?? string.Empty;
+                section.Header.Text = (spec.Checked ? "▼ " : "▶ ") + (spec.Text ?? string.Empty);
+                section.Content.Visible = spec.Checked;
+                return;
+            }
+
             Panel panel = control as Panel;
             if (panel != null && spec.Kind == "S") panel.Height = Math.Max(0, spec.Height);
         }
@@ -1046,6 +1244,23 @@ namespace KineticNapier.ADOFAIWorkbench.Host
             ToggleBinding binding = box != null ? box.Tag as ToggleBinding : null;
             if (binding == null || binding.Updating || string.IsNullOrEmpty(binding.Action)) return;
             connection.SendAction(paneId, binding.Action, box.Checked ? "1" : "0");
+        }
+
+        private void OnDropdownChanged(object sender, EventArgs e)
+        {
+            ComboBox dropdown = sender as ComboBox;
+            DropdownBinding binding = dropdown != null ? dropdown.Tag as DropdownBinding : null;
+            DropdownItem selected = dropdown != null ? dropdown.SelectedItem as DropdownItem : null;
+            if (binding == null || binding.Updating || selected == null || string.IsNullOrEmpty(binding.Action)) return;
+            connection.SendAction(paneId, binding.Action, selected.Value ?? string.Empty);
+        }
+
+        private void OnSectionHeaderClick(object sender, EventArgs e)
+        {
+            Button header = sender as Button;
+            SectionBinding binding = header != null ? header.Tag as SectionBinding : null;
+            if (binding == null || string.IsNullOrEmpty(binding.Action)) return;
+            connection.SendAction(paneId, binding.Action, binding.Argument ?? string.Empty);
         }
 
         private static void AddTo(Control parent, Control child)

@@ -21,6 +21,18 @@ namespace KineticNapier.ADOFAIWorkbench
         IEnumerable<IDockablePane> CreatePanes();
     }
 
+    public sealed class WorkbenchDropdownOption
+    {
+        public string Value { get; private set; }
+        public string Label { get; private set; }
+
+        public WorkbenchDropdownOption(string value, string label)
+        {
+            Value = value ?? string.Empty;
+            Label = label ?? string.Empty;
+        }
+    }
+
     public sealed class WorkbenchPaneView
     {
         private readonly List<string> lines = new List<string>();
@@ -52,6 +64,51 @@ namespace KineticNapier.ADOFAIWorkbench
         public WorkbenchPaneView Toggle(string label, string actionId, bool value)
         {
             lines.Add("C\t" + Encode(label) + "\t" + Encode(actionId) + "\t" + (value ? "1" : "0"));
+            return this;
+        }
+
+        public WorkbenchPaneView Dropdown(string selectedValue, string actionId, IEnumerable<string> options)
+        {
+            IEnumerable<WorkbenchDropdownOption> mapped = options == null
+                ? Enumerable.Empty<WorkbenchDropdownOption>()
+                : options.Select(option => new WorkbenchDropdownOption(option, option));
+            return Dropdown(selectedValue, actionId, mapped);
+        }
+
+        public WorkbenchPaneView Dropdown(string selectedValue, string actionId, IEnumerable<WorkbenchDropdownOption> options)
+        {
+            List<WorkbenchDropdownOption> materialized = options == null
+                ? new List<WorkbenchDropdownOption>()
+                : options.Where(option => option != null).ToList();
+
+            StringBuilder line = new StringBuilder("D\t")
+                .Append(Encode(selectedValue))
+                .Append('\t').Append(Encode(actionId))
+                .Append('\t').Append(materialized.Count.ToString(CultureInfo.InvariantCulture));
+            for (int i = 0; i < materialized.Count; i++)
+            {
+                line.Append('\t').Append(Encode(materialized[i].Value));
+                line.Append('\t').Append(Encode(materialized[i].Label));
+            }
+            lines.Add(line.ToString());
+            return this;
+        }
+
+        public WorkbenchPaneView BeginSection(string title, string actionId, bool expanded)
+        {
+            return BeginSection(title, actionId, string.Empty, expanded);
+        }
+
+        public WorkbenchPaneView BeginSection(string title, string actionId, string argument, bool expanded)
+        {
+            lines.Add("G+\t" + Encode(title) + "\t" + Encode(actionId) + "\t" + Encode(argument) + "\t"
+                + (expanded ? "1" : "0"));
+            return this;
+        }
+
+        public WorkbenchPaneView EndSection()
+        {
+            lines.Add("G-");
             return this;
         }
 

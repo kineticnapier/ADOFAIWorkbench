@@ -72,7 +72,7 @@ public interface IDockablePaneProvider
 }
 ```
 
-`WorkbenchPaneView` is a small process-safe UI description. Current primitives are text, buttons, text inputs, toggles, rows and spacers.
+`WorkbenchPaneView` is a small process-safe UI description. Current primitives are text, buttons, text inputs, toggles, dropdowns, collapsible sections, rows and spacers.
 
 ```csharp
 private sealed class MyPane : IDockablePane
@@ -85,12 +85,15 @@ private sealed class MyPane : IDockablePane
     {
         return new WorkbenchPaneView()
             .Text("My Tool", 16f, true)
-            .Input("value", "set-value")
-            .Toggle("Enabled", "enabled", true)
-            .BeginRow()
-            .Button("Run", "run", "", false)
-            .Button("Reset", "reset", "", false)
-            .EndRow();
+            .BeginSection("Settings", "toggle-section", "settings", true)
+                .Input("value", "set-value")
+                .Dropdown("Normal", "set-mode", new[] { "Normal", "Fast", "Precise" })
+                .Toggle("Enabled", "enabled", true)
+                .BeginRow()
+                    .Button("Run", "run", "", false)
+                    .Button("Reset", "reset", "", false)
+                .EndRow()
+            .EndSection();
     }
 
     public void HandleAction(string actionId, string argument)
@@ -99,6 +102,8 @@ private sealed class MyPane : IDockablePane
     }
 }
 ```
+
+Use `WorkbenchDropdownOption` when the value sent to `HandleAction()` should differ from the visible label. Section expansion state belongs to the pane; handle the section header action, update that state and call `Workbench.PublishPane(id)`.
 
 Register, update and open panes with:
 
